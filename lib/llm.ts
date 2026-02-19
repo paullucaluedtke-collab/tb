@@ -48,12 +48,21 @@ export async function analyzeWithClaude(text: string, symbol: string): Promise<A
             reasoning: result.reasoning || "No reasoning provided."
         };
 
-    } catch (error) {
+    } catch (error: any) {
         console.error("Claude analysis failed:", error);
+
+        // Extract meaningful error message
+        let errorMessage = "Error connecting to AI service.";
+        if (error instanceof Anthropic.APIError) {
+            errorMessage = `API Error: ${error.status} - ${error.message}`;
+        } else if (error instanceof Error) {
+            errorMessage = error.message;
+        }
+
         return {
-            score: 5,
-            summary: "AI Analysis unavailable.",
-            reasoning: "Error connecting to AI service."
+            score: 0, // 0 indicates error
+            summary: "AI Analysis Failed.",
+            reasoning: errorMessage
         };
     }
 }

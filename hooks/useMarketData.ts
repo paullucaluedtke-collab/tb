@@ -132,8 +132,14 @@ export const useMarketData = (
             }
         };
 
-        fetchBatchPrices(); // Initial
-        const interval = setInterval(fetchBatchPrices, 2000); // 2.0s Global Fast Cycle
+        fetchBatchPrices(); // Initial fetch
+
+        const interval = setInterval(() => {
+            // Anti-Ban: Only poll if tab is visible
+            if (!document.hidden) {
+                fetchBatchPrices();
+            }
+        }, 1000); // 1.0s "Live" updates
 
         return () => {
             isMounted = false;

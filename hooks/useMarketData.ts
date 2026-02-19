@@ -141,65 +141,114 @@ export const useMarketData = (
         };
     }, [watchlist]);
 
-    // 3. BACKGROUND LOOP: Slow Details for Watchlist (Recommendations/News) - 30s
+    // 3. DEEP LAYER: Full Analysis on Mode Switch (or Periodic 60s)
     useEffect(() => {
         let isMounted = true;
 
-        const fetchSlowDetails = async () => {
-            const targetAssets = activeCategory === 'All' ? watchlist : watchlist.filter(a => a.category === activeCategory);
-            const assetsToFetch = targetAssets.slice(0, 10); // Check top 10 for detailed analysis
-            const symbols = assetsToFetch.map(a => a.symbol);
+        const fetchDeepAnalysis = async () => {
+            const symbols = watchlist.map(a => a.symbol);
+            if (symbols.length === 0) return;
 
-            // Standard loop for heavy data
-            const chunk = 3;
-            for (let i = 0; i < symbols.length; i += chunk) {
-                if (!isMounted) break;
-                const batch = symbols.slice(i, i + chunk);
-                await Promise.all(batch.map(async (symbol) => {
-                    if (symbol === selectedSymbol) return;
+            try {
+                const res = await fetch('/api/batch-analysis', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbols, mode })
+                });
+                const json = await res.json();
 
-                    try {
-                        const [stockRes, newsRes] = await Promise.all([
-                            fetch(`/api/stock/${symbol}`),
-                            fetch(`/api/news/${symbol}`)
-                        ]);
-                        const stockJson = await stockRes.json();
-                        const newsJson = await newsRes.json();
+                if (!isMounted) return;
 
-                        if (!isMounted) return;
+                if (json.data) {
+                    setSummaries(prev => {
+                        const next = { ...prev };
+                        Object.entries(json.data).forEach(([symbol, data]: [string, any]) => {
+                            if (data.error) return;
 
-                        if (!stockJson.error && !newsJson.error) {
-                            setSummaries(prev => ({
-                                ...prev,
-                                [symbol]: {
-                                    ...prev[symbol], // Keep price
-                                    price: stockJson.latest.close, // Sync price
-                                    recommendation: stockJson.recommendation,
-                                    sentiment: newsJson.sentiment
-                                }
-                            }));
-                        }
-                    } catch (e) { }
-                }));
-                await new Promise(r => setTimeout(r, 1000));
+                            // Update Recommendation
+                            next[symbol] = {
+                                ...next[symbol],
+                                // Update price if available (backup)
+                                price: data.latestClose || next[symbol]?.price,
+                                recommendation: data.recommendation,
+                                // Keep existing sentiment or default
+                                sentiment: next[symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
+                            };
+                        });
+                        return next;
+                    });
+                }
+            } catch (e) {
+                // console.warn("Deep fetch failed", e);
             }
         };
 
-        fetchSlowDetails();
-        const interval = setInterval(fetchSlowDetails, 30000); // 30s Slow Cycle
+        fetchDeepAnalysis();
+        const interval = setInterval(fetchDeepAnalysis, 60000); // 60s refresh
 
         return () => {
             isMounted = false;
             clearInterval(interval);
         };
-    }, [watchlist, activeCategory, selectedSymbol]);
+    }, [watchlist, mode]); // Re-run when mode or watchlist changes
 
-    return {
-        stockData,
-        newsData,
-        summaries,
-        loading,
-        error,
-        lastUpdated: stockData ? new Date() : null // Derived or could be state
+    // 4. BACKGROUND LOOP: Slow Details for Watchlist (News Sentiment) - 30s
+
+    const fetchSlowDetails = async () => {
+        const targetAssets = activeCategory === 'All' ? watchlist : watchlist.filter(a => a.category === activeCategory);
+        const assetsToFetch = targetAssets.slice(0, 10); // Check top 10 for detailed analysis
+        const symbols = assetsToFetch.map(a => a.symbol);
+
+        // Standard loop for heavy data
+        const chunk = 3;
+        for (let i = 0; i < symbols.length; i += chunk) {
+            if (!isMounted) break;
+            const batch = symbols.slice(i, i + chunk);
+            await Promise.all(batch.map(async (symbol) => {
+                if (symbol === selectedSymbol) return;
+
+                try {
+                    const [stockRes, newsRes] = await Promise.all([
+                        fetch(`/api/stock/${symbol}`),
+                        fetch(`/api/news/${symbol}`)
+                    ]);
+                    const stockJson = await stockRes.json();
+                    const newsJson = await newsRes.json();
+
+                    if (!isMounted) return;
+
+                    if (!stockJson.error && !newsJson.error) {
+                        setSummaries(prev => ({
+                            ...prev,
+                            [symbol]: {
+                                ...prev[symbol], // Keep price
+                                price: stockJson.latest.close, // Sync price
+                                recommendation: stockJson.recommendation,
+                                sentiment: newsJson.sentiment
+                            }
+                        }));
+                    }
+                } catch (e) { }
+            }));
+            await new Promise(r => setTimeout(r, 1000));
+        }
     };
+
+    fetchSlowDetails();
+    const interval = setInterval(fetchSlowDetails, 30000); // 30s Slow Cycle
+
+    return () => {
+        isMounted = false;
+        clearInterval(interval);
+    };
+}, [watchlist, activeCategory, selectedSymbol]);
+
+return {
+    stockData,
+    newsData,
+    summaries,
+    loading,
+    error,
+    lastUpdated: stockData ? new Date() : null // Derived or could be state
+};
 };

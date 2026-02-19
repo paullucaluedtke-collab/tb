@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import YahooFinance from 'yahoo-finance2';
 const yahooFinance = new YahooFinance();
 import { calculateIndicators } from '@/lib/technical-analysis';
-import { getTradeSignal } from '@/lib/analysis';
+import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
 
 export async function GET(
     request: Request,
@@ -31,7 +31,7 @@ export async function GET(
             if (news.news && news.news.length > 0) {
                 // @ts-ignore
                 const headlines = news.news.map((n: any) => n.title);
-                const { analyzeSentiment } = require('@/lib/analysis');
+                // Used imported function
                 const sentimentResult = analyzeSentiment(headlines);
                 sentimentLabel = sentimentResult.label;
             }
@@ -54,6 +54,9 @@ export async function GET(
         }
 
         const enrichedData = calculateIndicators(quotes);
+
+        // Get the latest values for a quick summary
+        const latest = enrichedData[enrichedData.length - 1];
 
         // Get Trade Recommendation with Mode & Sentiment
         const recommendation = getTradeSignal(enrichedData, mode, sentimentLabel);

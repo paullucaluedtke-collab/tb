@@ -4,6 +4,8 @@ const yahooFinance = new YahooFinance();
 
 import { analyzeSentiment } from '@/lib/analysis';
 
+import { ASSETS } from '@/config/assets';
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ symbol: string }> }
@@ -11,10 +13,26 @@ export async function GET(
     const { symbol } = await params;
 
     try {
-        const searchResult = await yahooFinance.search(symbol, { newsCount: 10 }) as any;
+        // 1. Get Company Name for better search
+        const asset = ASSETS.find(a => a.symbol === symbol);
+        const query = asset ? `${symbol} ${asset.name}` : symbol;
 
-        // Filter to only include actual news items (search can return quotes too)
-        const newsItems = searchResult.news || [];
+        // 2. Fetch News (more items to allow for filtering)
+        const searchResult = await yahooFinance.search(query, { newsCount: 15 }) as any;
+        let newsItems = searchResult.news || [];
+
+        // 3. Strict Filtering: Must contain Symbol OR Name in Title to be relevant
+        // This removes "Recommended for you" generic spam.
+        if (asset) {
+            const terms = [symbol, asset.name.split(' ')[0]]; // "AAPL", "Apple"
+            newsItems = newsItems.filter((item: any) => {
+                const text = (item.title + ' ' + (item.publisher || '')).toLowerCase();
+                return terms.some(term => text.includes(term.toLowerCase()));
+            });
+        }
+
+        // Limit back to 5-8 relevant items
+        newsItems = newsItems.slice(0, 8);
 
         // Analyze Sentiment
         const headlines = newsItems.map((item: any) => item.title);

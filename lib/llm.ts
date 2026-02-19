@@ -20,7 +20,7 @@ export async function analyzeWithClaude(text: string, symbol: string): Promise<A
             model: "claude-3-haiku-20240307",
             max_tokens: 300,
             temperature: 0,
-            system: "You are a senior hedge fund analyst. Your job is to analyze financial news and provide a strict sentiment score (1-10) and a concise summary. 1 is Extremely Bearish, 10 is Extremely Bullish, 5 is Neutral.",
+            system: "You are a senior hedge fund analyst. Your job is to analyze financial news and provide a strict sentiment score (1-10) and a concise summary. 1 is Extremely Bearish, 10 is Extremely Bullish, 5 is Neutral.\nIMPORTANT: Output ONLY valid JSON. No markdown code blocks. No introductory text.",
             messages: [
                 {
                     role: "user",
@@ -34,11 +34,13 @@ export async function analyzeWithClaude(text: string, symbol: string): Promise<A
         });
 
         const responseContent = message.content[0].type === 'text' ? message.content[0].text : '';
+        // console.log(`[AI RAW] ${symbol}:`, responseContent); // Debugging
 
-        // Extract JSON
+        // Extract JSON (Handle Markdown blocks or plain JSON)
         const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
-            throw new Error('Invalid AI response format');
+            console.error(`[AI ERROR] Invalid Format for ${symbol}. Raw:`, responseContent);
+            throw new Error(`Invalid AI response format. Raw length: ${responseContent.length}`);
         }
 
         const result = JSON.parse(jsonMatch[0]);

@@ -53,68 +53,88 @@ export const useMarketData = (
     const [aiLoading, setAiLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // 1. FAST LOOP: Fetch Detailed Data for Selected Asset (3.5s)
+    // 1. ACTIVE ASSET LOOP: Fast Price (1s), Slow News (30s)
     useEffect(() => {
         if (!selectedSymbol) return;
 
         let isMounted = true;
+        let priceInterval: NodeJS.Timeout;
+        let newsInterval: NodeJS.Timeout;
 
-        const fetchDetails = async () => {
+        const fetchPrice = async () => {
             try {
-                // Only show loading on initial fetch if no data exists
-                if (!stockData || stockData.symbol !== selectedSymbol) {
-                    setLoading(true);
-                }
-
-                const [stockRes, newsRes] = await Promise.all([
-                    fetch(`/api/stock/${selectedSymbol}?mode=${mode}`),
-                    fetch(`/api/news/${selectedSymbol}`)
-                ]);
-
-                const stockJson = await stockRes.json();
-                const newsJson = await newsRes.json();
-
+                const res = await fetch(`/api/stock/${selectedSymbol}?mode=${mode}`);
+                const data = await res.json();
                 if (!isMounted) return;
 
-                if (stockJson.error) throw new Error(stockJson.error);
-                if (newsJson.error) console.warn("News error:", newsJson.error);
-
-                setStockData(stockJson);
-                setNewsData(newsJson);
-                setError(null);
-            } catch (err: any) {
-                if (isMounted) setError(err.message || 'Failed to fetch data');
-            } finally {
-                if (isMounted) setLoading(false);
-            }
+                // Only update if price/data actually changed to prevent jitter
+                setStockData(prev => {
+                    if (prev && JSON.stringify(prev.data) === JSON.stringify(data.data)) return prev;
+                    return data;
+                });
+            } catch (e) { }
         };
 
-        fetchDetails(); // Initial fetch
+        const fetchNews = async () => {
+            try {
+                const res = await fetch(`/api/news/${selectedSymbol}`);
+                const data = await res.json();
+                if (!isMounted) return;
 
-        const interval = setInterval(fetchDetails, 3500); // 3.5s Fast Loop
+                // Only update if news ID/hashes changed to prevent AI reset
+                setNewsData(prev => {
+                    const prevHash = prev?.news?.map((n: any) => n.uuid).join('|');
+                    const newHash = data?.news?.map((n: any) => n.uuid).join('|');
+                    // Also check sentiment score to ensure we don't miss updates there
+                    if (prevHash === newHash && prev?.sentiment?.score === data?.sentiment?.score) return prev;
+                    return data;
+                });
+            } catch (e) { }
+        };
+
+        // Initial Load (Show Loading only on first mount/symbol change)
+        const initialLoad = async () => {
+            setLoading(true);
+            await Promise.all([fetchPrice(), fetchNews()]);
+            if (isMounted) setLoading(false);
+        };
+
+        initialLoad();
+
+        // Fast Loop: Price (1s)
+        priceInterval = setInterval(fetchPrice, 1000);
+
+        // Slow Loop: News (30s)
+        newsInterval = setInterval(fetchNews, 30000);
 
         return () => {
             isMounted = false;
-            clearInterval(interval);
+            clearInterval(priceInterval);
+            clearInterval(newsInterval);
         };
     }, [selectedSymbol, mode]);
 
 
+    // DEBUG: Track renders
+    // console.log("useMarketData Render", selectedSymbol);
+
     // 2. BACKGROUND LOOP: Batch Watchlist Updates (Global Fast - 2.0s)
     useEffect(() => {
+        // console.log("Mounting Batch Effect");
         let isMounted = true;
 
+        // Stabilize symbols to prevent unnecessary effect re-runs if watchlist obj ref changes but content doesn't
+        // We use a simple join string as a dependency
+        const symbolList = watchlist.map(a => a.symbol);
+
         const fetchBatchPrices = async () => {
-            // Fetch ALL assets to ensure background updates for everything
-            const symbols = watchlist.map(a => a.symbol);
-
-            if (symbols.length === 0) return;
-
+            if (symbolList.length === 0) return;
+            // console.log("Fetching Batch...");
             try {
                 const res = await fetch('/api/batch-quotes', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbols })
+                    body: JSON.stringify({ symbols: symbolList })
                 });
                 const json = await res.json();
 
@@ -122,39 +142,45 @@ export const useMarketData = (
 
                 if (json.data) {
                     setSummaries(prev => {
+                        // Check if actually changed to avoid re-renders?
+                        // For now, just set it.
                         const next = { ...prev };
+                        let hasChanges = false;
+
                         json.data.forEach((item: any) => {
-                            // Merge price, keep existing rec/sentiment if available
-                            next[item.symbol] = {
-                                ...next[item.symbol], // Keep defaults
-                                price: item.price,
-                                // We don't update recommendation/sentiment here to save bandwidth
-                                recommendation: next[item.symbol]?.recommendation || { action: 'WAIT', confidence: 'LOW', reason: 'Loading...' },
-                                sentiment: next[item.symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
-                            };
+                            if (next[item.symbol]?.price !== item.price) {
+                                hasChanges = true;
+                                next[item.symbol] = {
+                                    ...next[item.symbol],
+                                    price: item.price,
+                                    recommendation: next[item.symbol]?.recommendation || { action: 'WAIT', confidence: 'LOW', reason: 'Loading...' },
+                                    sentiment: next[item.symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
+                                };
+                            }
                         });
-                        return next;
+                        return hasChanges ? next : prev;
                     });
                 }
             } catch (e) {
-                // console.warn("Batch fetch fail", e); 
+                // console.warn("Batch fetch fail", e);
             }
         };
 
         fetchBatchPrices(); // Initial fetch
 
         const interval = setInterval(() => {
-            // Anti-Ban: Only poll if tab is visible
             if (!document.hidden) {
                 fetchBatchPrices();
             }
-        }, 1000); // 1.0s "Live" updates
+        }, 2000); // 2.0s Fast Loop (Sidebar)
 
         return () => {
             isMounted = false;
             clearInterval(interval);
         };
-    }, [watchlist]);
+        // We depend on the stringified symbols to avoid "object reference" loops
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [JSON.stringify(watchlist.map(a => a.symbol))]);
 
     // 2a. AUTO-ANALYZE: Trigger AI when stock changes (Debounced)
     useEffect(() => {
@@ -194,7 +220,8 @@ export const useMarketData = (
         }, 1500); // 1.5s delay to allow user to settle
 
         return () => clearTimeout(timer);
-    }, [selectedSymbol, newsData]); // Run when symbol or news updates
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedSymbol, newsData?.sentiment?.score]);
 
     // 3. DEEP LAYER: Full Analysis on Mode Switch (or Periodic 60s)
     useEffect(() => {

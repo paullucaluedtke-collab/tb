@@ -138,6 +138,13 @@ export default function Home() {
   const [watchlist, setWatchlist] = useState<Asset[]>(ASSETS);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('AAPL');
 
+  // Ensure watchlist is populated (Hydration fix)
+  useEffect(() => {
+    if (watchlist.length === 0 && ASSETS.length > 0) {
+      setWatchlist(ASSETS);
+    }
+  }, [watchlist]);
+
   // Language State
   const [lang, setLang] = useState<'en' | 'de'>('en');
   const t = TRANSLATIONS[lang];
@@ -220,59 +227,55 @@ export default function Home() {
     }
 
     // 3. Sort
-    return [...result].sort((a, b) => { // Create copy
+    const sorted = [...result].sort((a, b) => { // Create copy
       const sumA = summaries[a.symbol];
       const sumB = summaries[b.symbol];
 
-      if (!sumA || !sumB) return 0; // Keep order if loading
+      // Safety check: If price data missing, push to bottom or keep stable?
+      // We keep stable for now to avoid jumping.
+      if (!sumA || !sumB) return 0;
 
-      switch (sortOption) {
-        case 'Price':
-          return sumB.price - sumA.price; // Descending
-        case 'Sentiment':
-          // Sort by score (High Hype/Bullish first)
-          return (sumB.sentiment.score || 0) - (sumA.sentiment.score || 0);
-        case 'Recommendation':
-          // Prioritize STRONG signals (both BUY and SELL) over weak ones.
-          // Order: STRONG LONG > STRONG SHORT > LONG > SHORT > WAIT
-          const getSignalWeight = (rec: TradeRecommendation) => {
-            if (rec.action === 'LONG' && rec.confidence === 'HIGH') return 5;
-            if (rec.action === 'SHORT' && rec.confidence === 'HIGH') return 4; // Actionable!
-            if (rec.action === 'LONG') return 3;
-            if (rec.action === 'SHORT') return 2;
-            return 1; // WAIT
-          };
-          return getSignalWeight(sumB.recommendation) - getSignalWeight(sumA.recommendation);
-        case 'Combined':
-          // "Top Opportunities": Alignment of Technicals + Sentiment
-          // Reward: High Signal AND High Sentiment in SAME direction.
-          // Penalize: Divergence.
-          const getCombinedScore = (sum: any) => {
-            if (!sum) return 0;
-
-            // 1. Convert Signal to Directional Score (-2 to +2)
-            let signalScore = 0;
-            if (sum.recommendation.action === 'LONG') {
-              signalScore = sum.recommendation.confidence === 'HIGH' ? 2 : 1;
-            } else if (sum.recommendation.action === 'SHORT') {
-              signalScore = sum.recommendation.confidence === 'HIGH' ? -2 : -1;
-            }
-
-            // 2. Sentiment is already Directional (-X to +X)
-            const sentimentScore = sum.sentiment.score || 0;
-
-            // 3. Add them up (Constructive Interference)
-            const totalScore = signalScore + sentimentScore;
-
-            // 4. Return Absolute value (We want Big Moves, up or down)
-            return Math.abs(totalScore);
-          };
-          return getCombinedScore(sumB) - getCombinedScore(sumA);
-        case 'Symbol':
-        default:
-          return a.symbol.localeCompare(b.symbol);
+      try {
+        switch (sortOption) {
+          case 'Price':
+            return (sumB?.price ?? 0) - (sumA?.price ?? 0);
+          case 'Sentiment':
+            return (sumB?.sentiment?.score ?? 0) - (sumA?.sentiment?.score ?? 0);
+          case 'Recommendation':
+            const getSignalWeight = (rec: TradeRecommendation | undefined) => {
+              if (!rec) return 0;
+              if (rec.action === 'LONG' && rec.confidence === 'HIGH') return 5;
+              if (rec.action === 'SHORT' && rec.confidence === 'HIGH') return 4;
+              if (rec.action === 'LONG') return 3;
+              if (rec.action === 'SHORT') return 2;
+              return 1;
+            };
+            return getSignalWeight(sumB?.recommendation) - getSignalWeight(sumA?.recommendation);
+          case 'Combined':
+            const getCombinedScore = (sum: any) => {
+              if (!sum?.recommendation || !sum?.sentiment) return 0;
+              let signalScore = 0;
+              if (sum.recommendation.action === 'LONG') {
+                signalScore = sum.recommendation.confidence === 'HIGH' ? 2 : 1;
+              } else if (sum.recommendation.action === 'SHORT') {
+                signalScore = sum.recommendation.confidence === 'HIGH' ? -2 : -1;
+              }
+              const sentimentScore = sum.sentiment.score || 0;
+              return Math.abs(signalScore + sentimentScore);
+            };
+            return getCombinedScore(sumB) - getCombinedScore(sumA);
+          case 'Symbol':
+          default:
+            return a.symbol.localeCompare(b.symbol);
+        }
+      } catch (e) {
+        console.error("Sort Error", e);
+        return 0;
       }
     });
+
+    // console.log("Filtered Assets:", sorted.length);
+    return sorted;
   }, [watchlist, activeCategory, searchQuery, sortOption, summaries]);
 
   // --- handlers ---
@@ -399,14 +402,17 @@ export default function Home() {
             <div key={asset.symbol} className="min-h-[160px]"> {/* Dynamic height for layout stability */}
               <StockCard
                 symbol={asset.symbol}
-                data={summaries[asset.symbol] || { latest: { close: 0, change: 0, changePercent: 0 } }}
+                data={summaries[asset.symbol] ? { ...summaries[asset.symbol], close: summaries[asset.symbol].price } as any : null}
                 recommendation={summaries[asset.symbol]?.recommendation}
                 sentiment={summaries[asset.symbol]?.sentiment}
                 aiScore={aiInsights[asset.symbol]?.score}
-                isSelected={selectedSymbol === asset.symbol}
-                onClick={() => setSelectedSymbol(asset.symbol)}
+                selected={selectedSymbol === asset.symbol}
+                onSelect={() => setSelectedSymbol(asset.symbol)}
+                onRemove={(e) => removeAsset(e, asset.symbol)}
                 onRemove={(e) => removeAsset(e, asset.symbol)}
                 lang={lang}
+                // Only show skeleton if we have absolutely no data for this symbol
+                loading={!summaries[asset.symbol]}
               />
             </div>
           ))}
@@ -628,7 +634,7 @@ export default function Home() {
                   symbol={selectedSymbol}
                   lang={lang}
                   result={aiInsights[selectedSymbol] || null}
-                  loading={aiLoading && !aiInsights[selectedSymbol]}
+                  loading={aiLoading && !aiInsights[selectedSymbol]} // Show loading if no result yet
                 />
               </div>
 
@@ -649,6 +655,11 @@ export default function Home() {
               {t.selectAsset}
             </div>
           )}
+        </div>
+        {/* Debug Overlay */}
+        <div className="fixed bottom-4 left-4 bg-black/80 text-white p-2 rounded text-xs font-mono z-50 pointer-events-none">
+          Assets: {watchlist.length} | Filtered: {filteredAndSortedAssets.length} | Sums: {Object.keys(summaries).length} <br />
+          Cat: {activeCategory} | Search: "{searchQuery}"
         </div>
       </main>
     </div>

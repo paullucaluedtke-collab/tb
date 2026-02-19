@@ -76,6 +76,12 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
                     {data && data.close !== undefined ? (
                         <p className="text-2xl font-medium text-gray-900 tracking-tight mt-1">
                             {data.close.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
+                            {/* Repainting Warning */}
+                            {recommendation?.signalStatus === 'FORMING' && (
+                                <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded border border-yellow-200" title="Signal based on open candle">
+                                    FORMING
+                                </span>
+                            )}
                         </p>
                     ) : (
                         <p className="text-sm text-gray-400 mt-1">--</p>

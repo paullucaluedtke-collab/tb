@@ -88,6 +88,7 @@ export interface TradeRecommendation {
     patterns?: string[]; // Detected patterns
     stopLoss?: number;
     takeProfit?: number;
+    signalStatus?: 'CONFIRMED' | 'FORMING'; // New field to warn about repainting
 }
 
 export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' = 'swing', sentimentLab: 'Bullish' | 'Bearish' | 'Neutral' = 'Neutral'): TradeRecommendation => {
@@ -190,6 +191,7 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' =
             reason,
             confidence: hasBullishPattern ? 'HIGH' : 'MEDIUM',
             patterns,
+            signalStatus: 'FORMING', // Daily candles are always forming until close
             ...exits
         };
     }
@@ -213,6 +215,7 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' =
             reason,
             confidence: hasBearishPattern ? 'HIGH' : 'MEDIUM',
             patterns,
+            signalStatus: 'FORMING',
             ...exits
         };
     }

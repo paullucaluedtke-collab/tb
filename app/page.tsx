@@ -399,12 +399,12 @@ export default function Home() {
             <div key={asset.symbol} className="min-h-[160px]"> {/* Dynamic height for layout stability */}
               <StockCard
                 symbol={asset.symbol}
-                data={summaries[asset.symbol] ? { close: summaries[asset.symbol].price } as any : null}
+                data={summaries[asset.symbol] || { latest: { close: 0, change: 0, changePercent: 0 } }}
                 recommendation={summaries[asset.symbol]?.recommendation}
                 sentiment={summaries[asset.symbol]?.sentiment}
-                loading={!summaries[asset.symbol]}
-                selected={selectedSymbol === asset.symbol}
-                onSelect={() => setSelectedSymbol(asset.symbol)}
+                aiScore={aiInsights[asset.symbol]?.score}
+                isSelected={selectedSymbol === asset.symbol}
+                onClick={() => setSelectedSymbol(asset.symbol)}
                 onRemove={(e) => removeAsset(e, asset.symbol)}
                 lang={lang}
               />
@@ -626,8 +626,9 @@ export default function Home() {
               <div className="mb-8">
                 <DeepAnalysisCard
                   symbol={selectedSymbol}
-                  newsItems={newsData?.news || []}
                   lang={lang}
+                  result={aiInsights[selectedSymbol] || null}
+                  loading={aiLoading && !aiInsights[selectedSymbol]}
                 />
               </div>
 

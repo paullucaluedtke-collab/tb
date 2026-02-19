@@ -14,9 +14,10 @@ export async function POST(request: Request) {
 
         // 1. Check for API Key
         if (!process.env.ANTHROPIC_API_KEY) {
+            console.error('ANTHROPIC_API_KEY is missing in server environment');
             return NextResponse.json({
                 error: 'Configuration Error',
-                message: 'ANTHROPIC_API_KEY is missing. Please add it to your .env.local file.'
+                message: 'Internal Server Error: Missing API Key. Did you restart the server?'
             }, { status: 500 });
         }
 

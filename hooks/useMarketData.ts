@@ -31,6 +31,13 @@ export interface NewsResponse {
     sentiment: SentimentResult;
 }
 
+export interface AIResult {
+    score: number;
+    summary: string;
+    reasoning: string;
+    newsHash?: string; // To track if news changed
+}
+
 export const useMarketData = (
     selectedSymbol: string,
     watchlist: Asset[],
@@ -41,7 +48,9 @@ export const useMarketData = (
     const [stockData, setStockData] = useState<StockData | null>(null);
     const [newsData, setNewsData] = useState<NewsResponse | null>(null);
     const [summaries, setSummaries] = useState<Record<string, { price: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
+    const [aiInsights, setAiInsights] = useState<Record<string, AIResult>>({});
     const [loading, setLoading] = useState(false);
+    const [aiLoading, setAiLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // 1. FAST LOOP: Fetch Detailed Data for Selected Asset (3.5s)
@@ -146,6 +155,46 @@ export const useMarketData = (
             clearInterval(interval);
         };
     }, [watchlist]);
+
+    // 2a. AUTO-ANALYZE: Trigger AI when stock changes (Debounced)
+    useEffect(() => {
+        if (!selectedSymbol || !newsData?.news || newsData.news.length === 0) return;
+
+        // Generate a simple hash of the top 3 news titles to detect changes
+        const currentNews = newsData.news.slice(0, 3);
+        const newsHash = currentNews.map(n => n.uuid).join('|');
+
+        // If we already have a result for this exact news set, skip
+        if (aiInsights[selectedSymbol] && aiInsights[selectedSymbol].newsHash === newsHash) return;
+
+        const timer = setTimeout(async () => {
+            setAiLoading(true);
+            try {
+                const res = await fetch('/api/ai-analysis', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        symbol: selectedSymbol,
+                        newsItems: currentNews.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
+                    })
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    setAiInsights(prev => ({
+                        ...prev,
+                        [selectedSymbol]: { ...data, newsHash }
+                    }));
+                }
+            } catch (e) {
+                // console.warn("Auto-Analyze failed", e);
+            } finally {
+                setAiLoading(false);
+            }
+        }, 1500); // 1.5s delay to allow user to settle
+
+        return () => clearTimeout(timer);
+    }, [selectedSymbol, newsData]); // Run when symbol or news updates
 
     // 3. DEEP LAYER: Full Analysis on Mode Switch (or Periodic 60s)
     useEffect(() => {

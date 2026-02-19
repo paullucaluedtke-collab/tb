@@ -15,43 +15,49 @@ interface AIResult {
     reasoning: string;
 }
 
-export default function DeepAnalysisCard({ symbol, newsItems, lang = 'en' }: DeepAnalysisCardProps) {
-    const [loading, setLoading] = useState(false);
-    const [result, setResult] = useState<AIResult | null>(null);
-    const [error, setError] = useState<string | null>(null);
+export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading }: DeepAnalysisCardProps) {
+    // Component is now purely presentational
+    // const [loading, setLoading] = useState(false); // Removed as per instruction
+    // const [result, setResult] = useState<AIResult | null>(null); // Removed as per instruction
+    // const [error, setError] = useState<string | null>(null); // Removed as per instruction
 
-    const handleAnalyze = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch('/api/ai-analysis', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    symbol,
-                    newsItems: newsItems.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
-                })
-            });
+    // const handleAnalyze = async () => { // Removed as per instruction
+    //     setLoading(true);
+    //     setError(null);
+    //     try {
+    //         const res = await fetch('/api/ai-analysis', {
+    //             method: 'POST',
+    //             headers: { 'Content-Type': 'application/json' },
+    //             body: JSON.stringify({
+    //                 symbol,
+    //                 newsItems: newsItems.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
+    //             })
+    //         });
 
-            if (!res.ok) throw new Error('Analysis failed');
+    //         if (!res.ok) {
+    //             const errData = await res.json();
+    //             throw new Error(errData.message || errData.error || 'Analysis failed');
+    //         }
 
-            const data = await res.json();
-            setResult(data);
-        } catch (e) {
-            setError(lang === 'de' ? 'Analyse fehlgeschlagen.' : 'Analysis failed.');
-        } finally {
-            setLoading(false);
-        }
-    };
+    //         const data = await res.json();
+    //         setResult(data);
+    //     } catch (e: any) {
+    //         setError(e.message || (lang === 'de' ? 'Analyse fehlgeschlagen.' : 'Analysis failed.'));
+    //     } finally {
+    //         setLoading(false);
+    //     }
+    // };
 
+    // We can keep a manual re-trigger if needed, but for now we rely on the parent/hook
     const t = {
         title: lang === 'de' ? 'KI Tiefen-Analyse' : 'AI Deep Analysis',
-        button: lang === 'de' ? 'Analysieren mit Claude 3' : 'Analyze with Claude 3',
+        button: lang === 'de' ? 'Analyse starten' : 'Start Analysis', // If we re-add manual button
         analyzing: lang === 'de' ? 'Lese Artikel...' : 'Reading articles...',
         score: lang === 'de' ? 'KI Score' : 'AI Score',
         reasoning: lang === 'de' ? 'Begründung' : 'Reasoning',
         summary: lang === 'de' ? 'Zusammenfassung' : 'Summary',
         power: lang === 'de' ? 'Powered by Anthropic Claude 3 Haiku' : 'Powered by Anthropic Claude 3 Haiku',
+        waiting: lang === 'de' ? 'Warte auf Daten...' : 'Waiting for Data...'
     };
 
     // Determine color based on 1-10 score
@@ -76,20 +82,10 @@ export default function DeepAnalysisCard({ symbol, newsItems, lang = 'en' }: Dee
             </div>
 
             {!result && !loading && (
-                <div className="text-center py-6 relative z-10">
-                    <p className="text-indigo-200 mb-6 text-sm">
-                        {lang === 'de'
-                            ? 'Lass die KI den Volltext der aktuellen Nachrichten lesen und bewerten.'
-                            : 'Let the AI read the full text of recent news and rate this asset.'}
+                <div className="text-center py-6 relative z-10 opacity-50">
+                    <p className="text-indigo-200 text-sm">
+                        {t.waiting}
                     </p>
-                    <button
-                        onClick={handleAnalyze}
-                        className="bg-indigo-500 hover:bg-indigo-400 text-white px-6 py-3 rounded-xl font-bold transition flex items-center gap-2 mx-auto shadow-lg hover:shadow-indigo-500/50"
-                    >
-                        <Brain size={18} />
-                        {t.button}
-                    </button>
-                    {error && <p className="text-red-400 mt-4 text-sm flex items-center justify-center gap-1"><AlertCircle size={14} /> {error}</p>}
                 </div>
             )}
 

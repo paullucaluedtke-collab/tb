@@ -12,9 +12,10 @@ interface StockCardProps {
     selected: boolean;
     onRemove: (e: React.MouseEvent) => void;
     lang?: 'en' | 'de';
+    aiScore?: number; // New Prop
 }
 
-const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect, selected, onRemove, lang = 'en' }: StockCardProps) => {
+const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect, selected, onRemove, lang = 'en', aiScore }: StockCardProps) => {
     if (loading) {
         return (
             <div className="bg-white/50 backdrop-blur-sm rounded-2xl p-5 animate-pulse h-40 flex flex-col justify-between border border-gray-100">
@@ -80,6 +81,15 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
                             {recommendation?.signalStatus === 'FORMING' && (
                                 <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded border border-yellow-200" title="Signal based on open candle">
                                     FORMING
+                                </span>
+                            )}
+                            {/* AI Score Badge */}
+                            {aiScore !== undefined && (
+                                <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border font-bold ${aiScore >= 7 ? 'bg-indigo-100 text-indigo-700 border-indigo-200' :
+                                        aiScore <= 4 ? 'bg-red-50 text-red-600 border-red-100' :
+                                            'bg-indigo-50 text-indigo-500 border-indigo-100'
+                                    }`}>
+                                    AI: {aiScore}/10
                                 </span>
                             )}
                         </p>

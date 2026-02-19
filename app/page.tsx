@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import StockChart from '@/components/StockChart';
 import NewsFeed from '@/components/NewsFeed';
 import StockCard from '@/components/StockCard';
+import DeepAnalysisCard from '@/components/DeepAnalysisCard';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 // Icons
@@ -619,6 +620,15 @@ export default function Home() {
               <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
                 <h3 className="text-lg font-bold text-gray-900 mb-6">{t.priceAction}</h3>
                 <StockChart data={stockData.data} />
+              </div>
+
+              {/* Deep Analysis Section */}
+              <div className="mb-8">
+                <DeepAnalysisCard
+                  symbol={selectedSymbol}
+                  newsItems={newsData?.news || []}
+                  lang={lang}
+                />
               </div>
 
               {/* News Section */}

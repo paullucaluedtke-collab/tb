@@ -1,7 +1,7 @@
 export interface Asset {
     symbol: string;
     name: string;
-    category: 'Stock' | 'Crypto' | 'Index';
+    category: 'Stock' | 'Crypto' | 'Index' | 'Forex';
 }
 
 export const ASSETS: Asset[] = [
@@ -81,4 +81,12 @@ export const ASSETS: Asset[] = [
     { symbol: 'GE', name: 'General Electric', category: 'Stock' },
     { symbol: 'BA', name: 'Boeing', category: 'Stock' },
     { symbol: 'LMT', name: 'Lockheed Martin', category: 'Stock' },
+
+    // --- Forex ---
+    { symbol: 'EURUSD=X', name: 'EUR/USD', category: 'Forex' },
+    { symbol: 'GBPUSD=X', name: 'GBP/USD', category: 'Forex' },
+    { symbol: 'USDJPY=X', name: 'USD/JPY', category: 'Forex' },
+    { symbol: 'USDCHF=X', name: 'USD/CHF', category: 'Forex' },
+    { symbol: 'AUDUSD=X', name: 'AUD/USD', category: 'Forex' },
+    { symbol: 'USDCAD=X', name: 'USD/CAD', category: 'Forex' },
 ];

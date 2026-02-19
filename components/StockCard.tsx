@@ -73,7 +73,7 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
             <div className="flex justify-between items-start">
                 <div>
                     <h3 className="text-lg font-bold text-gray-900 tracking-tight">{symbol}</h3>
-                    {data ? (
+                    {data && data.close !== undefined ? (
                         <p className="text-2xl font-medium text-gray-900 tracking-tight mt-1">
                             {data.close.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
                         </p>

@@ -15,35 +15,10 @@ import {
 import { ASSETS, Asset } from '@/config/assets';
 
 // Types
-interface StockData {
-  symbol: string;
-  data: StockDataPoint[];
-  latest: StockDataPoint;
-  recommendation: TradeRecommendation;
-  profile?: {
-    description: string;
-    sector?: string;
-    industry?: string;
-    website?: string;
-  };
-}
 
-interface NewsItem {
-  uuid: string;
-  title: string;
-  publisher: string;
-  link: string;
-  providerPublishTime: any;
-}
 
-interface NewsResponse {
-  symbol: string;
-  news: NewsItem[];
-  sentiment: SentimentResult;
-}
-
-type Category = 'All' | 'Stock' | 'Crypto' | 'Index';
-type SortOption = 'Symbol' | 'Price' | 'Sentiment' | 'Recommendation';
+type Category = 'All' | 'Stock' | 'Crypto' | 'Index' | 'Forex';
+type SortOption = 'Symbol' | 'Price' | 'Sentiment' | 'Recommendation' | 'Combined';
 
 // Translations
 const TRANSLATIONS = {
@@ -53,6 +28,7 @@ const TRANSLATIONS = {
     stock: "Stocks",
     crypto: "Crypto",
     index: "Indices",
+    forex: "Forex",
     sortBy: "Sort by",
     assets: "Assets",
     marketStatus: "Market Status",
@@ -63,6 +39,15 @@ const TRANSLATIONS = {
     marketHype: "Market Hype (News AI)",
     force: "Force",
     about: "About",
+    sortOptions: {
+      Symbol: "Symbol",
+      Price: "Price",
+      Sentiment: "Market Hype",
+      Recommendation: "Signal Strength",
+      Combined: "Top Opportunities"
+    },
+    stopLoss: "Stop Loss",
+    takeProfit: "Take Profit",
     priceAction: "Price Action",
     latestIntel: "Latest Intelligence",
     articles: "Articles",
@@ -82,6 +67,11 @@ const TRANSLATIONS = {
     sentiment: {
       Bullish: "Bullish",
       Bearish: "Bearish"
+    },
+    mode: {
+      swing: "Swing",
+      scalp: "Day Trade",
+      label: "Mode"
     }
   },
   de: {
@@ -90,6 +80,7 @@ const TRANSLATIONS = {
     stock: "Aktien",
     crypto: "Krypto",
     index: "Indizes",
+    forex: "Devisen",
     sortBy: "Sortieren:",
     assets: "Werte",
     marketStatus: "Marktstatus",
@@ -100,6 +91,15 @@ const TRANSLATIONS = {
     marketHype: "Marktstimmung (News AI)",
     force: "Stärke",
     about: "Über",
+    sortOptions: {
+      Symbol: "Symbol",
+      Price: "Preis",
+      Sentiment: "Markt-Hype",
+      Recommendation: "Signal-Stärke",
+      Combined: "Top-Chancen"
+    },
+    stopLoss: "Stop-Loss",
+    takeProfit: "Gewinnziel",
     priceAction: "Kursentwicklung",
     latestIntel: "Neueste Nachrichten",
     articles: "Artikel",
@@ -119,9 +119,16 @@ const TRANSLATIONS = {
     sentiment: {
       Bullish: "Bullisch",
       Bearish: "Bärisch"
+    },
+    mode: {
+      swing: "Swing",
+      scalp: "Day Trade",
+      label: "Modus"
     }
   }
 };
+
+import { useMarketData, StockData, NewsResponse } from '@/hooks/useMarketData';
 
 export default function Home() {
   // --- State ---
@@ -136,18 +143,12 @@ export default function Home() {
 
   // Filtering & Sorting
   const [activeCategory, setActiveCategory] = useState<Category>('All');
-  const [sortOption, setSortOption] = useState<SortOption>('Symbol');
+  const [sortOption, setSortOption] = useState<SortOption>('Combined');
   const [searchQuery, setSearchQuery] = useState('');
+  const [mode, setMode] = useState<'swing' | 'scalp'>('swing');
 
-  // Data
-  const [stockData, setStockData] = useState<StockData | null>(null);
-  const [newsData, setNewsData] = useState<NewsResponse | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-
-  // Summaries for sidebar / grid
-  const [summaries, setSummaries] = useState<Record<string, { price: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
-
-  const [loading, setLoading] = useState(false);
+  // Use Custom Hook for Data Fetching
+  const { stockData, newsData, summaries, loading: dataLoading, lastUpdated } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
 
   // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
@@ -156,25 +157,7 @@ export default function Home() {
 
   // --- Effects ---
 
-  // 1. FAST LOOP: Refresh Selected Asset (Every 3.5 seconds)
-  useEffect(() => {
-    if (!selectedSymbol) return;
-
-    // Reset translation on symbol change
-    setTranslatedDesc(null);
-    setTranslationError(null);
-
-    // Initial fetch
-    fetchDetailedData(selectedSymbol);
-
-    const interval = setInterval(() => {
-      fetchDetailedData(selectedSymbol);
-    }, 3500); // 3.5s - Real-time feel
-
-    return () => clearInterval(interval);
-  }, [selectedSymbol]);
-
-  // 3. TRANSLATION EFFECT
+  // 3. TRANSLATION EFFECT (Keep specific UI logic here)
   useEffect(() => {
     // If language is English, or no description, or it's the default "No description available."
     if (lang === 'en' || !stockData?.profile?.description || stockData.profile.description === 'No description available.') {
@@ -219,86 +202,6 @@ export default function Home() {
 
   }, [lang, stockData?.profile?.description]);
 
-
-  // 2. BACKGROUND LOOP: Refresh Watchlist Summaries (Every 15-20 seconds)
-  useEffect(() => {
-    const fetchVisibleSummaries = async () => {
-      // Prioritize assets in the ACTIVE category to save bandwidth
-      const targetAssets = activeCategory === 'All'
-        ? watchlist
-        : watchlist.filter(a => a.category === activeCategory);
-
-      // Limit to first 20 if "All" is selected to avoid massive hammer
-      const assetsToFetch = activeCategory === 'All' ? targetAssets.slice(0, 20) : targetAssets;
-
-      const symbols = assetsToFetch.map(a => a.symbol);
-
-      // Batch fetch in chunks of 5
-      const chunk = 5;
-      for (let i = 0; i < symbols.length; i += chunk) {
-        const batch = symbols.slice(i, i + chunk);
-        await Promise.all(batch.map(async (symbol) => {
-          // If it's the selected symbol, skip (handled by fast loop)
-          if (symbol === selectedSymbol) return;
-
-          try {
-            const [stockRes, newsRes] = await Promise.all([
-              fetch(`/api/stock/${symbol}`),
-              fetch(`/api/news/${symbol}`)
-            ]);
-            const stockJson = await stockRes.json();
-            const newsJson = await newsRes.json();
-
-            if (!stockJson.error && !newsJson.error) {
-              setSummaries(prev => ({
-                ...prev,
-                [symbol]: {
-                  price: stockJson.latest.close,
-                  recommendation: stockJson.recommendation,
-                  sentiment: newsJson.sentiment
-                }
-              }));
-            }
-          } catch (e) { /* ignore */ }
-        }));
-        // Small delay between chunks to be nice to API
-        await new Promise(r => setTimeout(r, 500));
-      }
-    };
-
-    fetchVisibleSummaries(); // Initial
-
-    const interval = setInterval(fetchVisibleSummaries, 15000); // 15s Background Cycle
-
-    return () => clearInterval(interval);
-  }, [watchlist, activeCategory, selectedSymbol]); // Re-run when filter changes
-
-  // Fetch Detailed Data Function
-  const fetchDetailedData = async (symbol: string) => {
-    // Don't set global loading on background refreshes, only initial selection
-    // We can check if we already have data to decide on spinner
-
-    try {
-      const [stockRes, newsRes] = await Promise.all([
-        fetch(`/api/stock/${symbol}`),
-        fetch(`/api/news/${symbol}`)
-      ]);
-      const stockJson = await stockRes.json();
-      const newsJson = await newsRes.json();
-
-      if (stockJson.error) throw new Error(stockJson.error);
-
-      setStockData(stockJson);
-      setNewsData(newsJson);
-      setLastUpdated(new Date());
-    } catch (error) {
-      console.error(error);
-      // Don't clear data on transient error to prevent flickering
-    } finally {
-      setLoading(false);
-    }
-  };
-
   // --- Computed ---
 
   const filteredAndSortedAssets = useMemo(() => {
@@ -326,19 +229,44 @@ export default function Home() {
         case 'Price':
           return sumB.price - sumA.price; // Descending
         case 'Sentiment':
-          // Sort by score
+          // Sort by score (High Hype/Bullish first)
           return (sumB.sentiment.score || 0) - (sumA.sentiment.score || 0);
         case 'Recommendation':
-          // Assign weight: STRONG BUY > BUY > WAIT > SELL > STRONG SELL
-          // Simple hack: LONG=2, WAIT=1, SHORT=0?
-          const getScore = (rec: TradeRecommendation) => {
-            if (rec.action === 'LONG' && rec.confidence === 'HIGH') return 4;
+          // Prioritize STRONG signals (both BUY and SELL) over weak ones.
+          // Order: STRONG LONG > STRONG SHORT > LONG > SHORT > WAIT
+          const getSignalWeight = (rec: TradeRecommendation) => {
+            if (rec.action === 'LONG' && rec.confidence === 'HIGH') return 5;
+            if (rec.action === 'SHORT' && rec.confidence === 'HIGH') return 4; // Actionable!
             if (rec.action === 'LONG') return 3;
-            if (rec.action === 'WAIT') return 2;
-            if (rec.action === 'SHORT') return 1;
-            return 0;
+            if (rec.action === 'SHORT') return 2;
+            return 1; // WAIT
           };
-          return getScore(sumB.recommendation) - getScore(sumA.recommendation);
+          return getSignalWeight(sumB.recommendation) - getSignalWeight(sumA.recommendation);
+        case 'Combined':
+          // "Top Opportunities": Alignment of Technicals + Sentiment
+          // Reward: High Signal AND High Sentiment in SAME direction.
+          // Penalize: Divergence.
+          const getCombinedScore = (sum: any) => {
+            if (!sum) return 0;
+
+            // 1. Convert Signal to Directional Score (-2 to +2)
+            let signalScore = 0;
+            if (sum.recommendation.action === 'LONG') {
+              signalScore = sum.recommendation.confidence === 'HIGH' ? 2 : 1;
+            } else if (sum.recommendation.action === 'SHORT') {
+              signalScore = sum.recommendation.confidence === 'HIGH' ? -2 : -1;
+            }
+
+            // 2. Sentiment is already Directional (-X to +X)
+            const sentimentScore = sum.sentiment.score || 0;
+
+            // 3. Add them up (Constructive Interference)
+            const totalScore = signalScore + sentimentScore;
+
+            // 4. Return Absolute value (We want Big Moves, up or down)
+            return Math.abs(totalScore);
+          };
+          return getCombinedScore(sumB) - getCombinedScore(sumA);
         case 'Symbol':
         default:
           return a.symbol.localeCompare(b.symbol);
@@ -359,6 +287,7 @@ export default function Home() {
     if (cat === 'Stock') return t.stock;
     if (cat === 'Crypto') return t.crypto;
     if (cat === 'Index') return t.index;
+    if (cat === 'Forex') return t.forex;
     return cat;
   };
 
@@ -409,9 +338,25 @@ export default function Home() {
             />
           </div>
 
+          {/* Mode Toggle */}
+          <div className="flex bg-gray-100 p-1 rounded-xl mt-4 mx-1">
+            <button
+              onClick={() => setMode('swing')}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'swing' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              {t.mode.swing}
+            </button>
+            <button
+              onClick={() => setMode('scalp')}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'scalp' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              {t.mode.scalp}
+            </button>
+          </div>
+
           {/* Category Filter Pills */}
           <div className="flex gap-2 mt-4 overflow-x-auto pb-2 scrollbar-none">
-            {['All', 'Stock', 'Crypto', 'Index'].map((cat) => (
+            {['All', 'Stock', 'Crypto', 'Index', 'Forex'].map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat as Category)}
@@ -432,16 +377,16 @@ export default function Home() {
               {filteredAndSortedAssets.length} {t.assets}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-gray-400">{t.sortBy}</span>
               <select
                 value={sortOption}
                 onChange={(e) => setSortOption(e.target.value as SortOption)}
                 className="bg-transparent text-xs font-bold text-indigo-600 focus:outline-none cursor-pointer"
               >
-                <option value="Symbol">Symbol</option>
-                <option value="Price">{t.signal.LONG === 'KAUFEN' ? 'Preis' : 'Price'}</option>
-                <option value="Sentiment">{t.marketHype.split('(')[0]}</option>
-                <option value="Recommendation">{t.technicalSignal}</option>
+                {(Object.keys(t.sortOptions) as SortOption[]).map((key) => (
+                  <option key={key} value={key}>
+                    {t.sortOptions[key]}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -450,7 +395,7 @@ export default function Home() {
         {/* Asset List */}
         <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 custom-scrollbar">
           {filteredAndSortedAssets.map(asset => (
-            <div key={asset.symbol} className="h-[160px]"> {/* Fixed height for layout stability */}
+            <div key={asset.symbol} className="min-h-[160px]"> {/* Dynamic height for layout stability */}
               <StockCard
                 symbol={asset.symbol}
                 data={summaries[asset.symbol] ? { close: summaries[asset.symbol].price } as any : null}
@@ -500,7 +445,7 @@ export default function Home() {
           <div>
             {lastUpdated && (
               <div className="flex items-center gap-2 text-xs font-medium text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full">
-                <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+                <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} />
                 {t.updated} {lastUpdated.toLocaleTimeString(locale)}
               </div>
             )}
@@ -509,7 +454,7 @@ export default function Home() {
 
         {/* Content Scroll View */}
         <div className="flex-1 overflow-y-auto p-8">
-          {loading && !stockData ? (
+          {dataLoading && !stockData ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
               <p>{t.analyzing} {selectedSymbol}...</p>
@@ -542,6 +487,24 @@ export default function Home() {
                   <p className="text-gray-600 font-medium leading-relaxed">
                     {stockData.recommendation.reason}.
                   </p>
+
+                  {/* Trading Plan (SL / TP) */}
+                  {(stockData.recommendation.stopLoss && stockData.recommendation.takeProfit) && (
+                    <div className="mt-6 grid grid-cols-2 gap-4">
+                      <div className="p-3 bg-red-50 rounded-xl border border-red-100 flex flex-col">
+                        <span className="text-xs font-bold text-red-400 uppercase tracking-wide mb-1">{t.stopLoss}</span>
+                        <span className="text-lg font-bold text-red-700">
+                          {stockData.recommendation.stopLoss.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-green-50 rounded-xl border border-green-100 flex flex-col">
+                        <span className="text-xs font-bold text-green-400 uppercase tracking-wide mb-1">{t.takeProfit}</span>
+                        <span className="text-lg font-bold text-green-700">
+                          {stockData.recommendation.takeProfit.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
 
                   {/* AI Pattern Chips */}
                   {stockData.recommendation.patterns && stockData.recommendation.patterns.length > 0 && (

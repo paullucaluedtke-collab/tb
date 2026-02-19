@@ -1,4 +1,4 @@
-import { SMA, RSI, MACD } from 'technicalindicators';
+import { SMA, RSI, MACD, EMA } from 'technicalindicators';
 
 export interface StockDataPoint {
     date: string;
@@ -11,22 +11,26 @@ export interface StockDataPoint {
     sma20?: number;
     sma50?: number;
     sma200?: number;
+    ema50?: number;
     rsi14?: number;
     macd?: {
         MACD?: number;
         signal?: number;
         histogram?: number;
     };
+    atr?: number;
 }
 
+// Input can be raw Yahoo Finance data which has Date objects
 export const calculateIndicators = (data: any[]): StockDataPoint[] => {
     // Extract closing prices for calculations
     const closes = data.map((d) => d.close);
 
-    // Calculate SMA
+    // Calculate SMA & EMA
     const sma20 = SMA.calculate({ period: 20, values: closes });
     const sma50 = SMA.calculate({ period: 50, values: closes });
     const sma200 = SMA.calculate({ period: 200, values: closes });
+    const ema50 = EMA.calculate({ period: 50, values: closes });
 
     // Calculate RSI
     const rsi14 = RSI.calculate({ period: 14, values: closes });
@@ -67,10 +71,12 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
 
         return {
             ...d,
-            date: d.date.toISOString().split('T')[0], // format date for UI
+            // Safely handle date conversion
+            date: d.date instanceof Date ? d.date.toISOString().split('T')[0] : String(d.date).split('T')[0],
             sma20: getIndicatorValue(sma20, data.length - sma20.length),
             sma50: getIndicatorValue(sma50, data.length - sma50.length),
             sma200: getIndicatorValue(sma200, data.length - sma200.length),
+            ema50: getIndicatorValue(ema50, data.length - ema50.length),
             rsi14: getIndicatorValue(rsi14, data.length - rsi14.length),
             macd: getIndicatorValue(macd, data.length - macd.length),
         };

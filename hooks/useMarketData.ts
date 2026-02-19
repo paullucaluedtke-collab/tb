@@ -306,7 +306,9 @@ export const useMarketData = (
         stockData,
         newsData,
         summaries,
+        aiInsights,
         loading,
+        aiLoading,
         error,
         lastUpdated: stockData ? new Date() : null // Derived or could be state
     };

@@ -149,7 +149,7 @@ export default function Home() {
   const [mode, setMode] = useState<'swing' | 'scalp'>('swing');
 
   // Use Custom Hook for Data Fetching
-  const { stockData, newsData, summaries, loading: dataLoading, lastUpdated } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
+  const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
 
   // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);

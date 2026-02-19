@@ -89,4 +89,19 @@ export const ASSETS: Asset[] = [
     { symbol: 'USDCHF=X', name: 'USD/CHF', category: 'Forex' },
     { symbol: 'AUDUSD=X', name: 'AUD/USD', category: 'Forex' },
     { symbol: 'USDCAD=X', name: 'USD/CAD', category: 'Forex' },
+
+    // --- Stocks: Germany (DAX) ---
+    { symbol: 'SAP.DE', name: 'SAP', category: 'Stock' },
+    { symbol: 'SIE.DE', name: 'Siemens', category: 'Stock' },
+    { symbol: 'ALV.DE', name: 'Allianz', category: 'Stock' },
+    { symbol: 'DTE.DE', name: 'Deutsche Telekom', category: 'Stock' },
+    { symbol: 'AIR.DE', name: 'Airbus', category: 'Stock' },
+    { symbol: 'BMW.DE', name: 'BMW', category: 'Stock' },
+    { symbol: 'MBG.DE', name: 'Mercedes-Benz', category: 'Stock' },
+    { symbol: 'VOW3.DE', name: 'Volkswagen', category: 'Stock' },
+    { symbol: 'BAS.DE', name: 'BASF', category: 'Stock' },
+    { symbol: 'IFX.DE', name: 'Infineon', category: 'Stock' },
+    { symbol: 'ADS.DE', name: 'Adidas', category: 'Stock' },
+    { symbol: 'DHL.DE', name: 'DHL Group', category: 'Stock' },
+    { symbol: 'MUV2.DE', name: 'Munich Re', category: 'Stock' },
 ];

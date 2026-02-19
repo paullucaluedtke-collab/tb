@@ -194,61 +194,65 @@ export const useMarketData = (
 
     // 4. BACKGROUND LOOP: Slow Details for Watchlist (News Sentiment) - 30s
 
-    const fetchSlowDetails = async () => {
-        const targetAssets = activeCategory === 'All' ? watchlist : watchlist.filter(a => a.category === activeCategory);
-        const assetsToFetch = targetAssets.slice(0, 10); // Check top 10 for detailed analysis
-        const symbols = assetsToFetch.map(a => a.symbol);
+    // 4. BACKGROUND LOOP: Slow Details for Watchlist (News Sentiment) - 30s
+    useEffect(() => {
+        let isMounted = true;
 
-        // Standard loop for heavy data
-        const chunk = 3;
-        for (let i = 0; i < symbols.length; i += chunk) {
-            if (!isMounted) break;
-            const batch = symbols.slice(i, i + chunk);
-            await Promise.all(batch.map(async (symbol) => {
-                if (symbol === selectedSymbol) return;
+        const fetchSlowDetails = async () => {
+            const targetAssets = activeCategory === 'All' ? watchlist : watchlist.filter(a => a.category === activeCategory);
+            const assetsToFetch = targetAssets.slice(0, 10); // Check top 10 for detailed analysis
+            const symbols = assetsToFetch.map(a => a.symbol);
 
-                try {
-                    const [stockRes, newsRes] = await Promise.all([
-                        fetch(`/api/stock/${symbol}`),
-                        fetch(`/api/news/${symbol}`)
-                    ]);
-                    const stockJson = await stockRes.json();
-                    const newsJson = await newsRes.json();
+            // Standard loop for heavy data
+            const chunk = 3;
+            for (let i = 0; i < symbols.length; i += chunk) {
+                if (!isMounted) break;
+                const batch = symbols.slice(i, i + chunk);
+                await Promise.all(batch.map(async (symbol) => {
+                    if (symbol === selectedSymbol) return;
 
-                    if (!isMounted) return;
+                    try {
+                        const [stockRes, newsRes] = await Promise.all([
+                            fetch(`/api/stock/${symbol}`),
+                            fetch(`/api/news/${symbol}`)
+                        ]);
+                        const stockJson = await stockRes.json();
+                        const newsJson = await newsRes.json();
 
-                    if (!stockJson.error && !newsJson.error) {
-                        setSummaries(prev => ({
-                            ...prev,
-                            [symbol]: {
-                                ...prev[symbol], // Keep price
-                                price: stockJson.latest.close, // Sync price
-                                recommendation: stockJson.recommendation,
-                                sentiment: newsJson.sentiment
-                            }
-                        }));
-                    }
-                } catch (e) { }
-            }));
-            await new Promise(r => setTimeout(r, 1000));
-        }
+                        if (!isMounted) return;
+
+                        if (!stockJson.error && !newsJson.error) {
+                            setSummaries(prev => ({
+                                ...prev,
+                                [symbol]: {
+                                    ...prev[symbol], // Keep price
+                                    price: stockJson.latest.close, // Sync price
+                                    recommendation: stockJson.recommendation,
+                                    sentiment: newsJson.sentiment
+                                }
+                            }));
+                        }
+                    } catch (e) { }
+                }));
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        };
+
+        fetchSlowDetails();
+        const interval = setInterval(fetchSlowDetails, 30000); // 30s Slow Cycle
+
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [watchlist, activeCategory, selectedSymbol]);
+
+    return {
+        stockData,
+        newsData,
+        summaries,
+        loading,
+        error,
+        lastUpdated: stockData ? new Date() : null // Derived or could be state
     };
-
-    fetchSlowDetails();
-    const interval = setInterval(fetchSlowDetails, 30000); // 30s Slow Cycle
-
-    return () => {
-        isMounted = false;
-        clearInterval(interval);
-    };
-}, [watchlist, activeCategory, selectedSymbol]);
-
-return {
-    stockData,
-    newsData,
-    summaries,
-    loading,
-    error,
-    lastUpdated: stockData ? new Date() : null // Derived or could be state
-};
 };

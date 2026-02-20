@@ -53,6 +53,15 @@ export const useMarketData = (
     const [aiLoading, setAiLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    // Refs for caching and preventing unnecessary effect triggers
+    const cacheRef = useRef<Record<string, { stock?: StockData, news?: NewsResponse }>>({});
+    const selectedSymbolRef = useRef(selectedSymbol);
+
+    // Update ref when symbol changes
+    useEffect(() => {
+        selectedSymbolRef.current = selectedSymbol;
+    }, [selectedSymbol]);
+
     // 1. ACTIVE ASSET LOOP: Fast Price (1s), Slow News (30s)
     useEffect(() => {
         if (!selectedSymbol) return;
@@ -66,6 +75,9 @@ export const useMarketData = (
                 const res = await fetch(`/api/stock/${selectedSymbol}?mode=${mode}`);
                 const data = await res.json();
                 if (!isMounted) return;
+
+                // Cache stock data
+                cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], stock: data };
 
                 // Only update if price/data actually changed to prevent jitter
                 setStockData(prev => {
@@ -81,6 +93,9 @@ export const useMarketData = (
                 const data = await res.json();
                 if (!isMounted) return;
 
+                // Cache news data
+                cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], news: data };
+
                 // Only update if news ID/hashes changed to prevent AI reset
                 setNewsData(prev => {
                     const prevHash = prev?.news?.map((n: any) => n.uuid).join('|');
@@ -94,7 +109,20 @@ export const useMarketData = (
 
         // Initial Load (Show Loading only on first mount/symbol change)
         const initialLoad = async () => {
-            setLoading(true);
+            const cached = cacheRef.current[selectedSymbol];
+            if (cached?.stock && cached?.news) {
+                // Use cache
+                setStockData(cached.stock);
+                setNewsData(cached.news);
+                setLoading(false);
+            } else {
+                // Clear state to show loading spinner for new asset
+                setStockData(null);
+                setNewsData(null);
+                setLoading(true);
+            }
+
+            // Always fetch fresh data anyway
             await Promise.all([fetchPrice(), fetchNews()]);
             if (isMounted) setLoading(false);
         };
@@ -275,8 +303,6 @@ export const useMarketData = (
     }, [watchlist, mode]); // Re-run when mode or watchlist changes
 
     // 4. BACKGROUND LOOP: Slow Details for Watchlist (News Sentiment) - 30s
-
-    // 4. BACKGROUND LOOP: Slow Details for Watchlist (News Sentiment) - 30s
     useEffect(() => {
         let isMounted = true;
 
@@ -291,7 +317,7 @@ export const useMarketData = (
                 if (!isMounted) break;
                 const batch = symbols.slice(i, i + chunk);
                 await Promise.all(batch.map(async (symbol) => {
-                    if (symbol === selectedSymbol) return;
+                    if (symbol === selectedSymbolRef.current) return;
 
                     try {
                         const [stockRes, newsRes] = await Promise.all([
@@ -327,7 +353,8 @@ export const useMarketData = (
             isMounted = false;
             clearInterval(interval);
         };
-    }, [watchlist, activeCategory, selectedSymbol]);
+        // Removed selectedSymbol from dependencies to stop network thrashing on share switch
+    }, [watchlist, activeCategory]);
 
     return {
         stockData,

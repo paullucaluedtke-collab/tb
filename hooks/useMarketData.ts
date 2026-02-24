@@ -132,8 +132,8 @@ export const useMarketData = (
         // Fast Loop: Price (1s)
         priceInterval = setInterval(fetchPrice, 1000);
 
-        // Slow Loop: News (30s)
-        newsInterval = setInterval(fetchNews, 30000);
+        // Slow Loop: News (60s) for active symbol
+        newsInterval = setInterval(fetchNews, 60000);
 
         return () => {
             isMounted = false;
@@ -148,16 +148,11 @@ export const useMarketData = (
 
     // 2. BACKGROUND LOOP: Batch Watchlist Updates (Global Fast - 2.0s)
     useEffect(() => {
-        // console.log("Mounting Batch Effect");
         let isMounted = true;
-
-        // Stabilize symbols to prevent unnecessary effect re-runs if watchlist obj ref changes but content doesn't
-        // We use a simple join string as a dependency
         const symbolList = watchlist.map(a => a.symbol);
 
         const fetchBatchPrices = async () => {
             if (symbolList.length === 0) return;
-            // console.log("Fetching Batch...");
             try {
                 const res = await fetch('/api/batch-quotes', {
                     method: 'POST',
@@ -170,17 +165,17 @@ export const useMarketData = (
 
                 if (json.data) {
                     setSummaries(prev => {
-                        // Check if actually changed to avoid re-renders?
-                        // For now, just set it.
                         const next = { ...prev };
                         let hasChanges = false;
 
                         json.data.forEach((item: any) => {
+                            // Only update if price changed
                             if (next[item.symbol]?.price !== item.price) {
                                 hasChanges = true;
                                 next[item.symbol] = {
                                     ...next[item.symbol],
                                     price: item.price,
+                                    // Use minimal default if it doesn't exist yet, wait for deep analysis
                                     recommendation: next[item.symbol]?.recommendation || { action: 'WAIT', confidence: 'LOW', reason: 'Loading...' },
                                     sentiment: next[item.symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
                                 };
@@ -196,17 +191,17 @@ export const useMarketData = (
 
         fetchBatchPrices(); // Initial fetch
 
+        // 2s Fast Loop for Watchlist Prices
         const interval = setInterval(() => {
             if (!document.hidden) {
                 fetchBatchPrices();
             }
-        }, 2000); // 2.0s Fast Loop (Sidebar)
+        }, 2000);
 
         return () => {
             isMounted = false;
             clearInterval(interval);
         };
-        // We depend on the stringified symbols to avoid "object reference" loops
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [JSON.stringify(watchlist.map(a => a.symbol))]);
 
@@ -251,7 +246,7 @@ export const useMarketData = (
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedSymbol, newsData?.sentiment?.score]);
 
-    // 3. DEEP LAYER: Full Analysis on Mode Switch (or Periodic 60s)
+    // 3. BACKGROUND SYNC: Deep Analysis & News for Watchlist (60s loop)
     useEffect(() => {
         let isMounted = true;
 
@@ -259,6 +254,7 @@ export const useMarketData = (
             const symbols = watchlist.map(a => a.symbol);
             if (symbols.length === 0) return;
 
+            // Deep Technical Analysis
             try {
                 const res = await fetch('/api/batch-analysis', {
                     method: 'POST',
@@ -274,14 +270,10 @@ export const useMarketData = (
                         const next = { ...prev };
                         Object.entries(json.data).forEach(([symbol, data]: [string, any]) => {
                             if (data.error) return;
-
-                            // Update Recommendation
                             next[symbol] = {
                                 ...next[symbol],
-                                // Update price if available (backup)
                                 price: data.latestClose || next[symbol]?.price,
                                 recommendation: data.recommendation,
-                                // Keep existing sentiment or default
                                 sentiment: next[symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
                             };
                         });
@@ -291,70 +283,41 @@ export const useMarketData = (
             } catch (e) {
                 // console.warn("Deep fetch failed", e);
             }
-        };
 
-        fetchDeepAnalysis();
-        const interval = setInterval(fetchDeepAnalysis, 60000); // 60s refresh
-
-        return () => {
-            isMounted = false;
-            clearInterval(interval);
-        };
-    }, [watchlist, mode]); // Re-run when mode or watchlist changes
-
-    // 4. BACKGROUND LOOP: Slow Details for Watchlist (News Sentiment) - 30s
-    useEffect(() => {
-        let isMounted = true;
-
-        const fetchSlowDetails = async () => {
+            // News Sentiment Sync - Batch it to avoid hammering
             const targetAssets = activeCategory === 'All' ? watchlist : watchlist.filter(a => a.category === activeCategory);
-            const assetsToFetch = targetAssets.slice(0, 10); // Check top 10 for detailed analysis
-            const symbols = assetsToFetch.map(a => a.symbol);
+            // Only sync top 5 visibly to save API calls
+            const assetsToFetch = targetAssets.slice(0, 5);
 
-            // Standard loop for heavy data
-            const chunk = 3;
-            for (let i = 0; i < symbols.length; i += chunk) {
+            for (const asset of assetsToFetch) {
                 if (!isMounted) break;
-                const batch = symbols.slice(i, i + chunk);
-                await Promise.all(batch.map(async (symbol) => {
-                    if (symbol === selectedSymbolRef.current) return;
+                if (asset.symbol === selectedSymbolRef.current) continue;
 
-                    try {
-                        const [stockRes, newsRes] = await Promise.all([
-                            fetch(`/api/stock/${symbol}`),
-                            fetch(`/api/news/${symbol}`)
-                        ]);
-                        const stockJson = await stockRes.json();
-                        const newsJson = await newsRes.json();
+                try {
+                    const newsRes = await fetch(`/api/news/${asset.symbol}`);
+                    const newsJson = await newsRes.json();
 
-                        if (!isMounted) return;
-
-                        if (!stockJson.error && !newsJson.error) {
-                            setSummaries(prev => ({
-                                ...prev,
-                                [symbol]: {
-                                    ...prev[symbol], // Keep price
-                                    price: stockJson.latest.close, // Sync price
-                                    recommendation: stockJson.recommendation,
-                                    sentiment: newsJson.sentiment
-                                }
-                            }));
-                        }
-                    } catch (e) { }
-                }));
-                await new Promise(r => setTimeout(r, 1000));
+                    if (newsJson && !newsJson.error && newsJson.sentiment) {
+                        setSummaries(prev => ({
+                            ...prev,
+                            [asset.symbol]: {
+                                ...prev[asset.symbol],
+                                sentiment: newsJson.sentiment
+                            }
+                        }));
+                    }
+                } catch (e) { }
             }
         };
 
-        fetchSlowDetails();
-        const interval = setInterval(fetchSlowDetails, 30000); // 30s Slow Cycle
+        fetchDeepAnalysis();
+        const interval = setInterval(fetchDeepAnalysis, 60000); // 60s background full sync
 
         return () => {
             isMounted = false;
             clearInterval(interval);
         };
-        // Removed selectedSymbol from dependencies to stop network thrashing on share switch
-    }, [watchlist, activeCategory]);
+    }, [watchlist, mode, activeCategory]);
 
     return {
         stockData,

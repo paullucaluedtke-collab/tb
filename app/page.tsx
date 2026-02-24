@@ -10,7 +10,7 @@ import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 // Icons
 import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
-  Search, Filter, ArrowUpDown, RefreshCw, Smartphone
+  Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X
 } from 'lucide-react';
 // Asset Config
 import { ASSETS, Asset } from '@/config/assets';
@@ -137,6 +137,7 @@ export default function Home() {
   // Watchlist: Initialize with all default assets
   const [watchlist, setWatchlist] = useState<Asset[]>(ASSETS);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('AAPL');
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
   // Ensure watchlist is populated (Hydration fix)
   useEffect(() => {
@@ -298,13 +299,21 @@ export default function Home() {
   const locale = lang === 'de' ? 'de-DE' : 'en-US';
 
   return (
-    <div className="flex h-screen bg-[#F5F5F7] font-sans text-slate-800 overflow-hidden">
+    <div className="flex h-screen bg-[#F5F5F7] font-sans text-slate-800 overflow-hidden relative">
+
+      {/* --- Mobile Sidebar Overlay --- */}
+      {showMobileSidebar && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+          onClick={() => setShowMobileSidebar(false)}
+        />
+      )}
 
       {/* --- Sidebar (Watchlist) --- */}
-      <aside className="w-[400px] flex flex-col border-r border-gray-200 bg-white/80 backdrop-blur-xl">
+      <aside className={`absolute z-50 md:relative w-full sm:w-[400px] md:w-[400px] h-full flex flex-col border-r border-gray-200 bg-white/95 md:bg-white/80 backdrop-blur-xl transition-transform duration-300 ease-in-out ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
 
         {/* Sidebar Header */}
-        <div className="p-6 pb-2">
+        <div className="p-4 md:p-6 pb-2">
           <div className="flex justify-between items-start mb-4">
             <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800 tracking-tight">
               <div className="bg-indigo-600 text-white p-1.5 rounded-lg">
@@ -313,19 +322,28 @@ export default function Home() {
               Swing Bot <span className="text-gray-400 font-light ml-1 text-sm">{t.pro}</span>
             </h1>
 
-            {/* Language Toggle */}
-            <div className="bg-gray-100 p-1 rounded-lg flex text-xs font-bold">
+            <div className="flex items-center gap-2">
+              {/* Language Toggle */}
+              <div className="bg-gray-100 p-1 rounded-lg flex text-xs font-bold">
+                <button
+                  onClick={() => setLang('en')}
+                  className={`px-2 py-1 rounded-md transition-all ${lang === 'en' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  EN
+                </button>
+                <button
+                  onClick={() => setLang('de')}
+                  className={`px-2 py-1 rounded-md transition-all ${lang === 'de' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                >
+                  DE
+                </button>
+              </div>
+              {/* Mobile Close Sidebar Button */}
               <button
-                onClick={() => setLang('en')}
-                className={`px-2 py-1 rounded-md transition-all ${lang === 'en' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                className="md:hidden p-1 text-gray-400 hover:text-gray-800 bg-gray-100 rounded-lg"
+                onClick={() => setShowMobileSidebar(false)}
               >
-                EN
-              </button>
-              <button
-                onClick={() => setLang('de')}
-                className={`px-2 py-1 rounded-md transition-all ${lang === 'de' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
-              >
-                DE
+                <X size={24} />
               </button>
             </div>
           </div>
@@ -359,12 +377,12 @@ export default function Home() {
           </div>
 
           {/* Category Filter Pills */}
-          <div className="flex gap-2 mt-4 overflow-x-auto pb-2 scrollbar-none">
+          <div className="flex gap-2 mt-4 overflow-x-auto pb-2 px-1 sm:px-0 scrollbar-none snap-x h-7">
             {['All', 'Stock', 'Crypto', 'Index', 'Forex'].map((cat) => (
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat as Category)}
-                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap snap-start shrink-0
                             ${activeCategory === cat
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
                     : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}
@@ -407,8 +425,7 @@ export default function Home() {
                 sentiment={summaries[asset.symbol]?.sentiment}
                 aiScore={aiInsights[asset.symbol]?.score}
                 selected={selectedSymbol === asset.symbol}
-                onSelect={() => setSelectedSymbol(asset.symbol)}
-                onRemove={(e) => removeAsset(e, asset.symbol)}
+                onSelect={() => { setSelectedSymbol(asset.symbol); setShowMobileSidebar(false); }}
                 onRemove={(e) => removeAsset(e, asset.symbol)}
                 lang={lang}
                 // Only show skeleton if we have absolutely no data for this symbol
@@ -436,9 +453,15 @@ export default function Home() {
       {/* --- Main Content --- */}
       <main className="flex-1 flex flex-col bg-[#F5F5F7] overflow-hidden">
         {/* Top Bar */}
-        <header className="h-16 flex items-center justify-between px-8 border-b border-gray-200/50 bg-white/50 backdrop-blur-md z-10">
-          <div className="flex items-baseline gap-4">
-            <h2 className="text-2xl font-black text-gray-800 tracking-tight">
+        <header className="h-16 flex items-center justify-between px-4 md:px-8 border-b border-gray-200/50 bg-white/50 backdrop-blur-md z-10 sticky top-0">
+          <div className="flex items-center gap-3 md:gap-4">
+            <button
+              className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setShowMobileSidebar(true)}
+            >
+              <Menu size={24} />
+            </button>
+            <h2 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight">
               {selectedSymbol}
             </h2>
             {stockData && (
@@ -460,7 +483,7 @@ export default function Home() {
         </header>
 
         {/* Content Scroll View */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {dataLoading && !stockData ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-400">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
@@ -473,8 +496,8 @@ export default function Home() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                 {/* 1. Technical Signal Card */}
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 flex flex-col justify-between">
-                  <div className="flex justify-between items-start mb-4">
+                <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100 flex flex-col justify-between">
+                  <div className="flex flex-col sm:flex-row justify-between items-start gap-3 sm:gap-0 mb-4">
                     <div>
                       <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t.technicalSignal}</h3>
                       <h4 className={`text-3xl font-black mt-1
@@ -534,7 +557,7 @@ export default function Home() {
                 </div>
 
                 {/* 2. Sentiment Card */}
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
+                <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100">
                   <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">{t.marketHype}</h3>
 
                   {newsData?.sentiment ? (
@@ -576,8 +599,8 @@ export default function Home() {
 
               {/* About Section */}
               {stockData.profile && (
-                <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
                     <h3 className="text-lg font-bold text-gray-900">{t.about} {stockData.symbol}</h3>
                     <div className="flex gap-2">
                       {stockData.profile.sector && (
@@ -623,8 +646,8 @@ export default function Home() {
               )}
 
               {/* Chart Section */}
-              <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-900 mb-6">{t.priceAction}</h3>
+              <div className="bg-white rounded-3xl p-3 sm:p-5 md:p-8 shadow-sm border border-gray-100">
+                <h3 className="text-lg font-bold text-gray-900 mb-4 sm:mb-6 px-2">{t.priceAction}</h3>
                 <StockChart data={stockData.data} />
               </div>
 
@@ -639,7 +662,7 @@ export default function Home() {
               </div>
 
               {/* News Section */}
-              <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
+              <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-lg font-bold text-gray-900">{t.latestIntel}</h3>
                   <span className="text-xs font-bold px-2 py-1 bg-gray-100 rounded text-gray-500">

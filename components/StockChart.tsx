@@ -24,10 +24,10 @@ const StockChart = ({ data }: StockChartProps) => {
     const recentData = data.slice(-100);
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-4 md:space-y-8">
             {/* Price and SMA Chart */}
-            <div className="h-96 w-full p-4 bg-white rounded-lg shadow">
-                <h3 className="text-lg font-bold mb-4">Price & SMA</h3>
+            <div className="h-72 md:h-96 w-full p-0 sm:p-2 md:p-4 bg-white rounded-lg">
+                <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0">Price & SMA</h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={recentData}>
                         <CartesianGrid strokeDasharray="3 3" />
@@ -50,8 +50,8 @@ const StockChart = ({ data }: StockChartProps) => {
             </div>
 
             {/* RSI Chart */}
-            <div className="h-48 w-full p-4 bg-white rounded-lg shadow">
-                <h3 className="text-lg font-bold mb-4">RSI (14)</h3>
+            <div className="h-40 md:h-48 w-full p-0 sm:p-2 md:p-4 bg-white rounded-lg">
+                <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0">RSI (14)</h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={recentData}>
                         <CartesianGrid strokeDasharray="3 3" />
@@ -70,8 +70,8 @@ const StockChart = ({ data }: StockChartProps) => {
             </div>
 
             {/* MACD Chart */}
-            <div className="h-64 w-full p-4 bg-white rounded-lg shadow">
-                <h3 className="text-lg font-bold mb-4">MACD</h3>
+            <div className="h-48 md:h-64 w-full p-0 sm:p-2 md:p-4 bg-white rounded-lg">
+                <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0">MACD</h3>
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={recentData}>
                         <CartesianGrid strokeDasharray="3 3" />

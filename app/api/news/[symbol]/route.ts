@@ -1,16 +1,28 @@
 import { NextResponse } from 'next/server';
 import YahooFinance from 'yahoo-finance2';
+import { LRUCache } from 'lru-cache';
 const yahooFinance = new YahooFinance();
 
 import { analyzeSentiment } from '@/lib/analysis';
 
 import { ASSETS } from '@/config/assets';
 
+// Cache news heavily because it doesn't change every second
+const newsCache = new LRUCache<string, any>({
+    max: 100,
+    ttl: 60000, // 60 seconds TTL for news
+});
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ symbol: string }> }
 ) {
     const { symbol } = await params;
+
+    const cachedNews = newsCache.get(symbol);
+    if (cachedNews) {
+        return NextResponse.json(cachedNews);
+    }
 
     try {
         // 1. Get Company Name for better search
@@ -38,11 +50,15 @@ export async function GET(
         const headlines = newsItems.map((item: any) => item.title);
         const sentiment = analyzeSentiment(headlines);
 
-        return NextResponse.json({
+        const responseData = {
             symbol,
             news: newsItems,
             sentiment // { score, label, summary }
-        });
+        };
+
+        newsCache.set(symbol, responseData);
+
+        return NextResponse.json(responseData);
 
     } catch (error) {
         console.error('Error fetching news:', error);

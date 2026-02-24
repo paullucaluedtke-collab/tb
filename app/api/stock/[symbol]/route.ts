@@ -1,8 +1,16 @@
 import { NextResponse } from 'next/server';
 import YahooFinance from 'yahoo-finance2';
+import { LRUCache } from 'lru-cache';
 const yahooFinance = new YahooFinance();
 import { calculateIndicators } from '@/lib/technical-analysis';
 import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
+
+// Global cache for API route (persists across hot reloads in dev, lives in memory in prod)
+// We use a short TTL (e.g., 5 seconds) to allow "fast" polling while protecting against 1000s of requests per minute
+const globalCache = new LRUCache<string, any>({
+    max: 100, // Max 100 symbols
+    ttl: 3000, // 3 seconds TTL for price data
+});
 
 export async function GET(
     request: Request,
@@ -13,6 +21,13 @@ export async function GET(
     // Get query params for mode (scalp/swing)
     const { searchParams } = new URL(request.url);
     const mode = (searchParams.get('mode') as 'swing' | 'scalp') || 'swing';
+
+    const cacheKey = `${symbol}-${mode}`;
+    const cachedData = globalCache.get(cacheKey);
+
+    if (cachedData) {
+        return NextResponse.json(cachedData);
+    }
 
     try {
         const queryOptions = { period1: '2023-01-01', interval: '1d' as const }; // Fetch enough data for SMA200
@@ -82,13 +97,18 @@ export async function GET(
             profile.industry = quoteSummary.assetProfile.industry;
         }
 
-        return NextResponse.json({
+        const responseData = {
             symbol,
             data: enrichedData, // Return full history for charts
             latest: latest,
             recommendation, // { action, reason, confidence }
             profile
-        });
+        };
+
+        // Save to cache
+        globalCache.set(cacheKey, responseData);
+
+        return NextResponse.json(responseData);
 
     } catch (error: any) {
         console.error('Error fetching stock data:', error);

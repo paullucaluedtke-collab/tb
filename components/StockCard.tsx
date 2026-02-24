@@ -1,3 +1,4 @@
+import React, { memo } from 'react';
 import { ArrowUp, ArrowDown, ArrowRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
@@ -86,8 +87,8 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
                             {/* AI Score Badge */}
                             {aiScore !== undefined && (
                                 <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border font-bold ${aiScore >= 7 ? 'bg-indigo-100 text-indigo-700 border-indigo-200' :
-                                        aiScore <= 4 ? 'bg-red-50 text-red-600 border-red-100' :
-                                            'bg-indigo-50 text-indigo-500 border-indigo-100'
+                                    aiScore <= 4 ? 'bg-red-50 text-red-600 border-red-100' :
+                                        'bg-indigo-50 text-indigo-500 border-indigo-100'
                                     }`}>
                                     AI: {aiScore}/10
                                 </span>
@@ -138,4 +139,4 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
     );
 };
 
-export default StockCard;
+export default memo(StockCard);

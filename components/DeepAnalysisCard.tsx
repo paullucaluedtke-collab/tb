@@ -5,8 +5,10 @@ import { Brain, Sparkles, Loader2, AlertCircle } from 'lucide-react';
 
 interface DeepAnalysisCardProps {
     symbol: string;
-    newsItems: any[];
+    newsItems?: any[];
     lang: 'en' | 'de';
+    result?: AIResult | null;
+    loading?: boolean;
 }
 
 interface AIResult {
@@ -70,7 +72,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading 
     };
 
     return (
-        <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-6 shadow-xl border border-indigo-500/30 text-white relative overflow-hidden">
+        <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-4 md:p-6 shadow-xl border border-indigo-500/30 text-white relative overflow-hidden">
             {/* Background Decor */}
             <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
                 <Brain size={120} />

@@ -7,9 +7,12 @@ export interface Asset {
 export const ASSETS: Asset[] = [
     // --- Indices / ETFs ---
     { symbol: 'SPY', name: 'S&P 500', category: 'Index' },
+    { symbol: 'VOO', name: 'Vanguard S&P 500', category: 'Index' },
     { symbol: 'QQQ', name: 'Nasdaq 100', category: 'Index' },
     { symbol: 'IWM', name: 'Russell 2000', category: 'Index' },
     { symbol: 'DIA', name: 'Dow Jones', category: 'Index' },
+    { symbol: 'SMH', name: 'Semiconductors ETF', category: 'Index' },
+    { symbol: 'ARKK', name: 'ARK Innovation', category: 'Index' },
     { symbol: 'GLD', name: 'Gold', category: 'Index' },
     { symbol: 'SLV', name: 'Silver', category: 'Index' },
     { symbol: 'TLT', name: '20+ Yr Treasury', category: 'Index' },
@@ -19,16 +22,21 @@ export const ASSETS: Asset[] = [
     { symbol: 'BTC-USD', name: 'Bitcoin', category: 'Crypto' },
     { symbol: 'ETH-USD', name: 'Ethereum', category: 'Crypto' },
     { symbol: 'SOL-USD', name: 'Solana', category: 'Crypto' },
-    { symbol: 'DOGE-USD', name: 'Dogecoin', category: 'Crypto' },
+    { symbol: 'BNB-USD', name: 'BNB', category: 'Crypto' },
     { symbol: 'XRP-USD', name: 'XRP', category: 'Crypto' },
+    { symbol: 'DOGE-USD', name: 'Dogecoin', category: 'Crypto' },
     { symbol: 'ADA-USD', name: 'Cardano', category: 'Crypto' },
     { symbol: 'AVAX-USD', name: 'Avalanche', category: 'Crypto' },
-    { symbol: 'SHIB-USD', name: 'Shiba Inu', category: 'Crypto' },
     { symbol: 'DOT-USD', name: 'Polkadot', category: 'Crypto' },
     { symbol: 'LINK-USD', name: 'Chainlink', category: 'Crypto' },
     { symbol: 'MATIC-USD', name: 'Polygon', category: 'Crypto' },
+    { symbol: 'SHIB-USD', name: 'Shiba Inu', category: 'Crypto' },
+    { symbol: 'LTC-USD', name: 'Litecoin', category: 'Crypto' },
+    { symbol: 'UNI-USD', name: 'Uniswap', category: 'Crypto' },
+    { symbol: 'BCH-USD', name: 'Bitcoin Cash', category: 'Crypto' },
+    { symbol: 'NEAR-USD', name: 'NEAR Protocol', category: 'Crypto' },
 
-    // --- Stocks: Big Tech / AI ---
+    // --- Stocks: Big Tech / AI / Software ---
     { symbol: 'NVDA', name: 'NVIDIA', category: 'Stock' },
     { symbol: 'AAPL', name: 'Apple', category: 'Stock' },
     { symbol: 'MSFT', name: 'Microsoft', category: 'Stock' },
@@ -38,12 +46,22 @@ export const ASSETS: Asset[] = [
     { symbol: 'TSLA', name: 'Tesla', category: 'Stock' },
     { symbol: 'AMD', name: 'AMD', category: 'Stock' },
     { symbol: 'AVGO', name: 'Broadcom', category: 'Stock' },
+    { symbol: 'TSM', name: 'Taiwan Semi', category: 'Stock' },
+    { symbol: 'ASML', name: 'ASML', category: 'Stock' },
     { symbol: 'ORCL', name: 'Oracle', category: 'Stock' },
     { symbol: 'CRM', name: 'Salesforce', category: 'Stock' },
+    { symbol: 'ADBE', name: 'Adobe', category: 'Stock' },
     { symbol: 'INTC', name: 'Intel', category: 'Stock' },
     { symbol: 'IBM', name: 'IBM', category: 'Stock' },
     { symbol: 'PLTR', name: 'Palantir', category: 'Stock' },
     { symbol: 'SMCI', name: 'Super Micro', category: 'Stock' },
+    { symbol: 'NOW', name: 'ServiceNow', category: 'Stock' },
+    { symbol: 'UBER', name: 'Uber', category: 'Stock' },
+    { symbol: 'ABNB', name: 'Airbnb', category: 'Stock' },
+    { symbol: 'CRWD', name: 'CrowdStrike', category: 'Stock' },
+    { symbol: 'PANW', name: 'Palo Alto', category: 'Stock' },
+    { symbol: 'SNOW', name: 'Snowflake', category: 'Stock' },
+    { symbol: 'MSTR', name: 'MicroStrategy', category: 'Stock' },
 
     // --- Stocks: Finance / Fintech ---
     { symbol: 'JPM', name: 'JPMorgan', category: 'Stock' },
@@ -57,6 +75,8 @@ export const ASSETS: Asset[] = [
     { symbol: 'HOOD', name: 'Robinhood', category: 'Stock' },
     { symbol: 'PYPL', name: 'PayPal', category: 'Stock' },
     { symbol: 'SQ', name: 'Block', category: 'Stock' },
+    { symbol: 'MARA', name: 'Marathon Digital', category: 'Stock' },
+    { symbol: 'RIOT', name: 'Riot Platforms', category: 'Stock' },
 
     // --- Stocks: Consumer & Retail ---
     { symbol: 'WMT', name: 'Walmart', category: 'Stock' },
@@ -69,12 +89,19 @@ export const ASSETS: Asset[] = [
     { symbol: 'NKE', name: 'Nike', category: 'Stock' },
     { symbol: 'DIS', name: 'Disney', category: 'Stock' },
     { symbol: 'NFLX', name: 'Netflix', category: 'Stock' },
+    { symbol: 'RIVN', name: 'Rivian', category: 'Stock' },
+    { symbol: 'F', name: 'Ford', category: 'Stock' },
+    { symbol: 'GM', name: 'General Motors', category: 'Stock' },
+    { symbol: 'RACE', name: 'Ferrari', category: 'Stock' },
 
     // --- Stocks: Health & Industrial ---
     { symbol: 'LLY', name: 'Eli Lilly', category: 'Stock' },
+    { symbol: 'NVO', name: 'Novo Nordisk', category: 'Stock' },
     { symbol: 'JNJ', name: 'Johnson & Johnson', category: 'Stock' },
     { symbol: 'UNH', name: 'UnitedHealth', category: 'Stock' },
     { symbol: 'PFE', name: 'Pfizer', category: 'Stock' },
+    { symbol: 'ABBV', name: 'AbbVie', category: 'Stock' },
+    { symbol: 'MRK', name: 'Merck', category: 'Stock' },
     { symbol: 'XOM', name: 'Exxon Mobil', category: 'Stock' },
     { symbol: 'CVX', name: 'Chevron', category: 'Stock' },
     { symbol: 'CAT', name: 'Caterpillar', category: 'Stock' },
@@ -90,7 +117,7 @@ export const ASSETS: Asset[] = [
     { symbol: 'AUDUSD=X', name: 'AUD/USD', category: 'Forex' },
     { symbol: 'USDCAD=X', name: 'USD/CAD', category: 'Forex' },
 
-    // --- Stocks: Germany (DAX) ---
+    // --- Stocks: Germany (DAX) & Europe ---
     { symbol: 'SAP.DE', name: 'SAP', category: 'Stock' },
     { symbol: 'SIE.DE', name: 'Siemens', category: 'Stock' },
     { symbol: 'ALV.DE', name: 'Allianz', category: 'Stock' },
@@ -104,4 +131,11 @@ export const ASSETS: Asset[] = [
     { symbol: 'ADS.DE', name: 'Adidas', category: 'Stock' },
     { symbol: 'DHL.DE', name: 'DHL Group', category: 'Stock' },
     { symbol: 'MUV2.DE', name: 'Munich Re', category: 'Stock' },
+    { symbol: 'MC.PA', name: 'LVMH', category: 'Stock' },
+    { symbol: 'OR.PA', name: 'L\'Oréal', category: 'Stock' },
+    { symbol: 'RMS.PA', name: 'Hermès', category: 'Stock' },
+    { symbol: 'TTE', name: 'TotalEnergies', category: 'Stock' },
+    { symbol: 'SAN.PA', name: 'Sanofi', category: 'Stock' },
+    { symbol: 'SHEL.L', name: 'Shell', category: 'Stock' },
+    { symbol: 'AZN.L', name: 'AstraZeneca', category: 'Stock' },
 ];

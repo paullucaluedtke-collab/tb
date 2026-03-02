@@ -20,7 +20,7 @@ export async function GET(
 
     // Get query params for mode (scalp/swing)
     const { searchParams } = new URL(request.url);
-    const mode = (searchParams.get('mode') as 'swing' | 'scalp') || 'swing';
+    const mode = (searchParams.get('mode') as 'swing' | 'scalp' | 'long_term') || 'swing';
 
     const cacheKey = `${symbol}-${mode}`;
     const cachedData = globalCache.get(cacheKey);

@@ -13,7 +13,7 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'No symbols provided' }, { status: 400 });
         }
 
-        const activeMode = mode === 'scalp' ? 'scalp' : 'swing';
+        const activeMode = mode === 'scalp' ? 'scalp' : (mode === 'long_term' ? 'long_term' : 'swing');
 
         // Process in chunks to avoid rate limiting
         const chunkSize = 10;

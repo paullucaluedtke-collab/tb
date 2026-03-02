@@ -91,7 +91,7 @@ export interface TradeRecommendation {
     signalStatus?: 'CONFIRMED' | 'FORMING'; // New field to warn about repainting
 }
 
-export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' = 'swing', sentimentLab: 'Bullish' | 'Bearish' | 'Neutral' = 'Neutral'): TradeRecommendation => {
+export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' | 'long_term' = 'swing', sentimentLab: 'Bullish' | 'Bearish' | 'Neutral' = 'Neutral'): TradeRecommendation => {
     if (data.length < 200) {
         return { action: 'WAIT', reason: 'Not enough data', confidence: 'LOW' };
     }
@@ -135,16 +135,33 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' =
 
 
     // Trend Check
-    // Swing: SMA 200 (Long term)
-    // Scalp: EMA 50 (Faster, reactive)
-    const trendIndicator = mode === 'scalp' ? (latest.ema50 || latest.sma50) : latest.sma200;
-    const isUptrend = latest.close > (trendIndicator || 0);
-    const isDowntrend = latest.close < (trendIndicator || 0);
+    let trendIndicator = latest.sma200; // Default to SMA200 for long_term/swing fallback
+    let isUptrend = false;
+    let isDowntrend = false;
+    let trendReason = '';
+
+    if (mode === 'scalp') {
+        trendIndicator = latest.ema50 || latest.sma50;
+        isUptrend = latest.close > (trendIndicator || 0);
+        isDowntrend = latest.close < (trendIndicator || 0);
+        trendReason = 'Uptrend';
+    } else if (mode === 'swing') {
+        // Swing: Strong trend alignment (Price > SMA50 > SMA200)
+        isUptrend = latest.close > (latest.sma50 || 0) && (latest.sma50 || 0) > (latest.sma200 || 0);
+        isDowntrend = latest.close < (latest.sma50 || 0) && (latest.sma50 || 0) < (latest.sma200 || 0);
+        trendReason = 'Strong Uptrend (MA Alignment)';
+    } else if (mode === 'long_term') {
+        // Long Term: Secular trend (Price > SMA200)
+        isUptrend = latest.close > (latest.sma200 || 0);
+        isDowntrend = latest.close < (latest.sma200 || 0);
+        trendReason = 'Secular Uptrend (> SMA200)';
+    }
 
     // Momentum Check (RSI)
     const rsi = latest.rsi14 || 50;
-    const isOversold = rsi < 30;
-    const isOverbought = rsi > 70;
+    const slowRsi = latest.rsi70 || 50;
+    const isOversold = mode === 'long_term' ? (slowRsi < 40 || rsi < 25) : rsi < 30; // Deep value for long term
+    const isOverbought = mode === 'long_term' ? (slowRsi > 65 || rsi > 80) : rsi > 70;
 
     // Momentum Check (MACD)
     const macdHist = latest.macd?.histogram || 0;
@@ -152,12 +169,16 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' =
     const macdBullishCross = macdHist > 0 && prevMacdHist <= 0;
     const macdBearishCross = macdHist < 0 && prevMacdHist >= 0;
 
+    // Special Long Term Triggers
+    const isGoldenCross = (latest.sma50 || 0) > (latest.sma200 || 0) && (prev.sma50 || 0) <= (prev.sma200 || 0);
+    const isDeathCross = (latest.sma50 || 0) < (latest.sma200 || 0) && (prev.sma50 || 0) >= (prev.sma200 || 0);
+
     // ATR for Stop Loss / Take Profit
     const atr = latest.atr || (latest.high - latest.low); // Fallback
     const calculateExits = (action: 'LONG' | 'SHORT', price: number, atrValue: number) => {
-        // Mode logic: Scalp = tighter stops, Swing = wider stops
-        const slMult = mode === 'scalp' ? 1.0 : 2.0;
-        const tpMult = mode === 'scalp' ? 2.0 : 4.0;
+        // Mode logic: Scalp = tighter stops, Swing = medium, Long Term = very wide
+        const slMult = mode === 'scalp' ? 1.0 : (mode === 'swing' ? 2.0 : 5.0);
+        const tpMult = mode === 'scalp' ? 2.0 : (mode === 'swing' ? 4.0 : 15.0);
 
         if (action === 'LONG') {
             return {
@@ -172,49 +193,96 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' =
         }
     };
 
-    // 1. STRONG BUY (Long)
+    // 1. BUY (Long) SIGNALS
     const hasBullishPattern = patterns.some(p => ['Bullish Engulfing', 'Hammer', 'Morning Star'].includes(p));
-
-    // Sentiment Gate: Avoid buying if sentiment is Bearish
     const sentimentGateLong = sentimentLab !== 'Bearish';
 
-    if (isUptrend && (isOversold || macdBullishCross || hasBullishPattern) && sentimentGateLong) {
-        let reason = 'Uptrend';
-        if (isOversold) reason += ' + RSI Oversold';
-        if (macdBullishCross) reason += ' + MACD Bullish Cross';
-        if (hasBullishPattern) reason += ` + ${patterns.join(', ')}`;
+    let longTriggered = false;
+    let longReason = trendReason;
+    let longConfidence: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
 
+    if (mode === 'long_term') {
+        if (isUptrend && (isGoldenCross || isOversold) && sentimentGateLong) {
+            longTriggered = true;
+            if (isGoldenCross) longReason += ' + GOLDEN CROSS';
+            if (isOversold) longReason += ' + Deep Value Pullback';
+            longConfidence = isGoldenCross ? 'HIGH' : 'MEDIUM';
+        }
+    } else if (mode === 'swing') {
+        const bbLowerHit = latest.bb?.lower ? latest.close <= latest.bb.lower : false;
+        if (isUptrend && (isOversold || macdBullishCross || bbLowerHit || hasBullishPattern) && sentimentGateLong) {
+            longTriggered = true;
+            if (isOversold) longReason += ' + RSI Oversold';
+            if (macdBullishCross) longReason += ' + MACD Bullish Cross';
+            if (bbLowerHit) longReason += ' + Bollinger Lower Band Hit';
+            if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
+            longConfidence = (bbLowerHit || hasBullishPattern) ? 'HIGH' : 'MEDIUM';
+        }
+    } else { // Scalp
+        if (isUptrend && (isOversold || macdBullishCross || hasBullishPattern) && sentimentGateLong) {
+            longTriggered = true;
+            if (isOversold) longReason += ' + RSI Oversold';
+            if (macdBullishCross) longReason += ' + MACD Bullish Cross';
+            if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
+            longConfidence = hasBullishPattern ? 'HIGH' : 'MEDIUM';
+        }
+    }
+
+    if (longTriggered) {
         const exits = calculateExits('LONG', latest.close, atr);
-
         return {
             action: 'LONG',
-            reason,
-            confidence: hasBullishPattern ? 'HIGH' : 'MEDIUM',
-            patterns,
-            signalStatus: 'FORMING', // Daily candles are always forming until close
+            reason: longReason,
+            confidence: longConfidence,
+            patterns: mode !== 'long_term' ? patterns : [], // Don't show daily patterns on long term
+            signalStatus: 'FORMING',
             ...exits
         };
     }
 
-    // 2. STRONG SELL (Short)
+    // 2. SELL (Short) SIGNALS
     const hasBearishPattern = patterns.some(p => ['Bearish Engulfing', 'Shooting Star', 'Evening Star'].includes(p));
-
-    // Sentiment Gate: Avoid shorting if sentiment is Bullish
     const sentimentGateShort = sentimentLab !== 'Bullish';
 
-    if (isDowntrend && (isOverbought || macdBearishCross || hasBearishPattern) && sentimentGateShort) {
-        let reason = 'Downtrend';
-        if (isOverbought) reason += ' + RSI Overbought';
-        if (macdBearishCross) reason += ' + MACD Bearish Cross';
-        if (hasBearishPattern) reason += ` + ${patterns.join(', ')}`;
+    let shortTriggered = false;
+    let shortReason = mode === 'long_term' ? 'Secular Downtrend (< SMA200)' : 'Downtrend';
+    if (mode === 'swing') shortReason = 'Strong Downtrend (MA Alignment)';
+    let shortConfidence: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
 
+    if (mode === 'long_term') {
+        if (isDowntrend && (isDeathCross || isOverbought) && sentimentGateShort) {
+            shortTriggered = true;
+            if (isDeathCross) shortReason += ' + DEATH CROSS';
+            if (isOverbought) shortReason += ' + Overbought Exhaustion';
+            shortConfidence = isDeathCross ? 'HIGH' : 'MEDIUM';
+        }
+    } else if (mode === 'swing') {
+        const bbUpperHit = latest.bb?.upper ? latest.close >= latest.bb.upper : false;
+        if (isDowntrend && (isOverbought || macdBearishCross || bbUpperHit || hasBearishPattern) && sentimentGateShort) {
+            shortTriggered = true;
+            if (isOverbought) shortReason += ' + RSI Overbought';
+            if (macdBearishCross) shortReason += ' + MACD Bearish Cross';
+            if (bbUpperHit) shortReason += ' + Bollinger Upper Band Hit';
+            if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
+            shortConfidence = (bbUpperHit || hasBearishPattern) ? 'HIGH' : 'MEDIUM';
+        }
+    } else { // Scalp
+        if (isDowntrend && (isOverbought || macdBearishCross || hasBearishPattern) && sentimentGateShort) {
+            shortTriggered = true;
+            if (isOverbought) shortReason += ' + RSI Overbought';
+            if (macdBearishCross) shortReason += ' + MACD Bearish Cross';
+            if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
+            shortConfidence = hasBearishPattern ? 'HIGH' : 'MEDIUM';
+        }
+    }
+
+    if (shortTriggered) {
         const exits = calculateExits('SHORT', latest.close, atr);
-
         return {
             action: 'SHORT',
-            reason,
-            confidence: hasBearishPattern ? 'HIGH' : 'MEDIUM',
-            patterns,
+            reason: shortReason,
+            confidence: shortConfidence,
+            patterns: mode !== 'long_term' ? patterns : [],
             signalStatus: 'FORMING',
             ...exits
         };

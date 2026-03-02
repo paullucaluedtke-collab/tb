@@ -72,6 +72,7 @@ const TRANSLATIONS = {
     mode: {
       swing: "Swing",
       scalp: "Day Trade",
+      long_term: "Long Term",
       label: "Mode"
     }
   },
@@ -124,6 +125,7 @@ const TRANSLATIONS = {
     mode: {
       swing: "Swing",
       scalp: "Day Trade",
+      long_term: "Langfristig",
       label: "Modus"
     }
   }
@@ -154,7 +156,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<Category>('All');
   const [sortOption, setSortOption] = useState<SortOption>('Combined');
   const [searchQuery, setSearchQuery] = useState('');
-  const [mode, setMode] = useState<'swing' | 'scalp'>('swing');
+  const [mode, setMode] = useState<'swing' | 'scalp' | 'long_term'>('swing');
 
   // Use Custom Hook for Data Fetching
   const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
@@ -361,7 +363,7 @@ export default function Home() {
           </div>
 
           {/* Mode Toggle */}
-          <div className="flex bg-gray-100 p-1 rounded-xl mt-4 mx-1">
+          <div className="flex bg-gray-100 p-1 rounded-xl mt-4 mx-1 gap-1">
             <button
               onClick={() => setMode('swing')}
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'swing' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
@@ -373,6 +375,12 @@ export default function Home() {
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'scalp' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
             >
               {t.mode.scalp}
+            </button>
+            <button
+              onClick={() => setMode('long_term')}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'long_term' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              {t.mode.long_term}
             </button>
           </div>
 

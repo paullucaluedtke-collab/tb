@@ -42,7 +42,7 @@ export const useMarketData = (
     selectedSymbol: string,
     watchlist: Asset[],
     activeCategory: string,
-    mode: 'swing' | 'scalp' = 'swing'
+    mode: 'swing' | 'scalp' | 'long_term' = 'swing'
 ) => {
     // State
     const [stockData, setStockData] = useState<StockData | null>(null);

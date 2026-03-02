@@ -1,4 +1,4 @@
-import { SMA, RSI, MACD, EMA } from 'technicalindicators';
+import { SMA, RSI, MACD, EMA, BollingerBands } from 'technicalindicators';
 
 export interface StockDataPoint {
     date: string;
@@ -13,10 +13,17 @@ export interface StockDataPoint {
     sma200?: number;
     ema50?: number;
     rsi14?: number;
+    rsi70?: number; // Slow RSI for long-term deep value pullbacks
     macd?: {
         MACD?: number;
         signal?: number;
         histogram?: number;
+    };
+    bb?: {
+        middle?: number;
+        upper?: number;
+        lower?: number;
+        pb?: number;
     };
     atr?: number;
 }
@@ -34,6 +41,10 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
 
     // Calculate RSI
     const rsi14 = RSI.calculate({ period: 14, values: closes });
+    const rsi70 = RSI.calculate({ period: 70, values: closes }); // Slow weekly equivalent
+
+    // Calculate Bollinger Bands
+    const bb = BollingerBands.calculate({ period: 20, stdDev: 2, values: closes });
 
     // Calculate MACD
     const macdInput = {
@@ -78,6 +89,8 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
             sma200: getIndicatorValue(sma200, data.length - sma200.length),
             ema50: getIndicatorValue(ema50, data.length - ema50.length),
             rsi14: getIndicatorValue(rsi14, data.length - rsi14.length),
+            rsi70: getIndicatorValue(rsi70, data.length - rsi70.length),
+            bb: getIndicatorValue(bb, data.length - bb.length),
             macd: getIndicatorValue(macd, data.length - macd.length),
         };
     });

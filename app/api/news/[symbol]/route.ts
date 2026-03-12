@@ -13,6 +13,21 @@ const newsCache = new LRUCache<string, any>({
     ttl: 60000, // 60 seconds TTL for news
 });
 
+const TRUSTED_PUBLISHERS = [
+    'bloomberg',
+    'reuters',
+    'the wall street journal',
+    'financial times',
+    'cnbc',
+    'marketwatch',
+    'barrons',
+    "barron's",
+    'forbes',
+    'fortune',
+    'the new york times',
+    'benzinga'
+];
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ symbol: string }> }
@@ -30,8 +45,22 @@ export async function GET(
         const query = asset ? `${symbol} ${asset.name}` : symbol;
 
         // 2. Fetch News (more items to allow for filtering)
-        const searchResult = await yahooFinance.search(query, { newsCount: 15 }) as any;
-        let newsItems = searchResult.news || [];
+        // Request 30 items to dig past the generic press releases
+        let searchResult: any = {};
+        let newsItems: any[] = [];
+        
+        try {
+            searchResult = await yahooFinance.search(query, { newsCount: 30 }) as any;
+            newsItems = searchResult.news || [];
+        } catch (e: any) {
+            // Yahoo's API frequently throws SchemaValidation failures on large queries 
+            // even though the data is valid. Safe bypass:
+            if (e.name === 'FailedYahooValidationError' && e.result?.news) {
+                newsItems = e.result.news;
+            } else {
+                throw e; // Rethrow if it's a real network error
+            }
+        }
 
         // 3. Strict Filtering: Must contain Symbol OR Name in Title to be relevant
         // This removes "Recommended for you" generic spam.
@@ -43,7 +72,24 @@ export async function GET(
             });
         }
 
-        // Limit back to 5-8 relevant items
+        // 4. Trusted Publisher Sort
+        newsItems.sort((a: any, b: any) => {
+            const aPublisher = (a.publisher || '').toLowerCase();
+            const bPublisher = (b.publisher || '').toLowerCase();
+            
+            const aIsTrusted = TRUSTED_PUBLISHERS.some(p => aPublisher.includes(p));
+            const bIsTrusted = TRUSTED_PUBLISHERS.some(p => bPublisher.includes(p));
+
+            if (aIsTrusted && !bIsTrusted) return -1;
+            if (!aIsTrusted && bIsTrusted) return 1;
+            
+            // If both are trusted or both are untrusted, sort by publish time (newest first)
+            const aDate = a.providerPublishTime ? new Date(a.providerPublishTime).getTime() : 0;
+            const bDate = b.providerPublishTime ? new Date(b.providerPublishTime).getTime() : 0;
+            return bDate - aDate;
+        });
+
+        // 5. Limit back to top 8 highest-quality items
         newsItems = newsItems.slice(0, 8);
 
         // Analyze Sentiment

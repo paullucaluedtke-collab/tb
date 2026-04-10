@@ -207,46 +207,38 @@ export const useMarketData = (
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [JSON.stringify(watchlist.map(a => a.symbol))]);
 
-    // 2a. AUTO-ANALYZE: Trigger AI when stock changes (Debounced)
-    useEffect(() => {
-        if (!selectedSymbol || !newsData?.news || newsData.news.length === 0) return;
+    // 2a. MANUAL AI ANALYSIS: Triggered by user clicking the analyze button
+    const triggerAiAnalysis = async (symbol?: string) => {
+        const targetSymbol = symbol || selectedSymbol;
+        if (!targetSymbol || !newsData?.news || newsData.news.length === 0) return;
 
-        // Generate a simple hash of the top 3 news titles to detect changes
         const currentNews = newsData.news.slice(0, 3);
         const newsHash = currentNews.map(n => n.uuid).join('|');
 
-        // If we already have a result for this exact news set, skip
-        if (aiInsights[selectedSymbol] && aiInsights[selectedSymbol].newsHash === newsHash) return;
+        setAiLoading(true);
+        try {
+            const res = await fetch('/api/ai-analysis', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    symbol: targetSymbol,
+                    newsItems: currentNews.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
+                })
+            });
 
-        const timer = setTimeout(async () => {
-            setAiLoading(true);
-            try {
-                const res = await fetch('/api/ai-analysis', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        symbol: selectedSymbol,
-                        newsItems: currentNews.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
-                    })
-                });
-
-                if (res.ok) {
-                    const data = await res.json();
-                    setAiInsights(prev => ({
-                        ...prev,
-                        [selectedSymbol]: { ...data, newsHash }
-                    }));
-                }
-            } catch (e) {
-                // console.warn("Auto-Analyze failed", e);
-            } finally {
-                setAiLoading(false);
+            if (res.ok) {
+                const data = await res.json();
+                setAiInsights(prev => ({
+                    ...prev,
+                    [targetSymbol]: { ...data, newsHash }
+                }));
             }
-        }, 1500); // 1.5s delay to allow user to settle
-
-        return () => clearTimeout(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedSymbol, newsData?.sentiment?.score]);
+        } catch (e) {
+            // Analysis failed silently
+        } finally {
+            setAiLoading(false);
+        }
+    };
 
     // 3. BACKGROUND SYNC: Deep Analysis & News for Watchlist (60s loop)
     useEffect(() => {
@@ -329,6 +321,7 @@ export const useMarketData = (
         loading,
         aiLoading,
         error,
-        lastUpdated: stockData ? new Date() : null // Derived or could be state
+        lastUpdated: stockData ? new Date() : null,
+        triggerAiAnalysis,
     };
 };

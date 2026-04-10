@@ -1,14 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { Brain, Sparkles, Loader2, AlertCircle } from 'lucide-react';
+import { Brain, Sparkles, Loader2, Play } from 'lucide-react';
 
 interface DeepAnalysisCardProps {
     symbol: string;
-    newsItems?: any[];
     lang: 'en' | 'de';
     result?: AIResult | null;
     loading?: boolean;
+    onAnalyze?: () => void;
+    hasNews?: boolean;
 }
 
 interface AIResult {
@@ -17,52 +17,19 @@ interface AIResult {
     reasoning: string;
 }
 
-export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading }: DeepAnalysisCardProps) {
-    // Component is now purely presentational
-    // const [loading, setLoading] = useState(false); // Removed as per instruction
-    // const [result, setResult] = useState<AIResult | null>(null); // Removed as per instruction
-    // const [error, setError] = useState<string | null>(null); // Removed as per instruction
-
-    // const handleAnalyze = async () => { // Removed as per instruction
-    //     setLoading(true);
-    //     setError(null);
-    //     try {
-    //         const res = await fetch('/api/ai-analysis', {
-    //             method: 'POST',
-    //             headers: { 'Content-Type': 'application/json' },
-    //             body: JSON.stringify({
-    //                 symbol,
-    //                 newsItems: newsItems.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
-    //             })
-    //         });
-
-    //         if (!res.ok) {
-    //             const errData = await res.json();
-    //             throw new Error(errData.message || errData.error || 'Analysis failed');
-    //         }
-
-    //         const data = await res.json();
-    //         setResult(data);
-    //     } catch (e: any) {
-    //         setError(e.message || (lang === 'de' ? 'Analyse fehlgeschlagen.' : 'Analysis failed.'));
-    //     } finally {
-    //         setLoading(false);
-    //     }
-    // };
-
-    // We can keep a manual re-trigger if needed, but for now we rely on the parent/hook
+export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading, onAnalyze, hasNews }: DeepAnalysisCardProps) {
     const t = {
         title: lang === 'de' ? 'KI Tiefen-Analyse' : 'AI Deep Analysis',
-        button: lang === 'de' ? 'Analyse starten' : 'Start Analysis', // If we re-add manual button
+        button: lang === 'de' ? 'Analyse starten' : 'Run Analysis',
         analyzing: lang === 'de' ? 'Lese Artikel...' : 'Reading articles...',
         score: lang === 'de' ? 'KI Score' : 'AI Score',
         reasoning: lang === 'de' ? 'Begründung' : 'Reasoning',
         summary: lang === 'de' ? 'Zusammenfassung' : 'Summary',
         power: lang === 'de' ? 'Powered by Anthropic Claude Sonnet' : 'Powered by Anthropic Claude Sonnet',
-        waiting: lang === 'de' ? 'Warte auf Daten...' : 'Waiting for Data...'
+        noNews: lang === 'de' ? 'Keine News verfügbar für Analyse' : 'No news available for analysis',
+        rerun: lang === 'de' ? 'Erneut analysieren' : 'Re-analyze',
     };
 
-    // Determine color based on 1-10 score
     const getScoreColor = (s: number) => {
         if (s >= 8) return 'text-green-600';
         if (s >= 6) return 'text-green-500';
@@ -78,19 +45,40 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading 
                 <Brain size={120} />
             </div>
 
-            <div className="flex items-center gap-2 mb-4 relative z-10">
-                <Sparkles className="text-yellow-400" size={20} />
-                <h3 className="text-lg font-bold tracking-wide">{t.title}</h3>
+            <div className="flex items-center justify-between mb-4 relative z-10">
+                <div className="flex items-center gap-2">
+                    <Sparkles className="text-yellow-400" size={20} />
+                    <h3 className="text-lg font-bold tracking-wide">{t.title}</h3>
+                </div>
+                {/* Re-analyze button when result already exists */}
+                {result && !loading && onAnalyze && hasNews && (
+                    <button
+                        onClick={onAnalyze}
+                        className="text-xs font-medium text-indigo-300 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-indigo-500/30 hover:border-indigo-400/50 hover:bg-white/5"
+                    >
+                        {t.rerun}
+                    </button>
+                )}
             </div>
 
+            {/* Initial state: Show analyze button */}
             {!result && !loading && (
-                <div className="text-center py-6 relative z-10 opacity-50">
-                    <p className="text-indigo-200 text-sm">
-                        {t.waiting}
-                    </p>
+                <div className="text-center py-8 relative z-10">
+                    {hasNews ? (
+                        <button
+                            onClick={onAnalyze}
+                            className="group inline-flex items-center gap-3 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-900/50 hover:shadow-indigo-600/50 hover:scale-[1.02] active:scale-[0.98]"
+                        >
+                            <Play size={18} className="group-hover:scale-110 transition-transform" />
+                            {t.button}
+                        </button>
+                    ) : (
+                        <p className="text-indigo-300/60 text-sm">{t.noNews}</p>
+                    )}
                 </div>
             )}
 
+            {/* Loading state */}
             {loading && (
                 <div className="text-center py-10 relative z-10 animate-pulse">
                     <Loader2 className="animate-spin mx-auto mb-3 text-indigo-300" size={32} />
@@ -98,7 +86,8 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading 
                 </div>
             )}
 
-            {result && (
+            {/* Result state */}
+            {result && !loading && (
                 <div className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     <div className="flex items-end gap-3 mb-4">
                         <span className={`text-5xl font-black ${getScoreColor(result.score)} drop-shadow-lg`}>

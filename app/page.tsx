@@ -195,7 +195,7 @@ export default function Home() {
   const [mode, setMode] = useState<'swing' | 'scalp' | 'long_term'>('swing');
 
   // Use Custom Hook for Data Fetching
-  const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
+  const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated, triggerAiAnalysis } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
 
   // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
@@ -721,7 +721,9 @@ export default function Home() {
                   symbol={selectedSymbol}
                   lang={lang}
                   result={aiInsights[selectedSymbol] || null}
-                  loading={aiLoading && !aiInsights[selectedSymbol]} // Show loading if no result yet
+                  loading={aiLoading}
+                  onAnalyze={() => triggerAiAnalysis()}
+                  hasNews={!!newsData?.news && newsData.news.length > 0}
                 />
               </div>
 

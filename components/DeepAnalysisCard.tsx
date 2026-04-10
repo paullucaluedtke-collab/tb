@@ -58,7 +58,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading 
         score: lang === 'de' ? 'KI Score' : 'AI Score',
         reasoning: lang === 'de' ? 'Begründung' : 'Reasoning',
         summary: lang === 'de' ? 'Zusammenfassung' : 'Summary',
-        power: lang === 'de' ? 'Powered by Anthropic Claude 3 Haiku' : 'Powered by Anthropic Claude 3 Haiku',
+        power: lang === 'de' ? 'Powered by Anthropic Claude Sonnet' : 'Powered by Anthropic Claude Sonnet',
         waiting: lang === 'de' ? 'Warte auf Daten...' : 'Waiting for Data...'
     };
 

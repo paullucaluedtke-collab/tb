@@ -17,18 +17,23 @@ export async function analyzeWithClaude(text: string, symbol: string): Promise<A
 
     try {
         const message = await anthropic.messages.create({
-            model: "claude-3-haiku-20240307",
-            max_tokens: 300,
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 500,
             temperature: 0,
-            system: "You are a senior hedge fund analyst. Your job is to analyze financial news and provide a strict sentiment score (1-10) and a concise summary. 1 is Extremely Bearish, 10 is Extremely Bullish, 5 is Neutral.\nIMPORTANT: Output ONLY valid JSON. No markdown code blocks. No introductory text.",
+            system: `You are a senior hedge fund analyst with 20+ years of experience. Analyze financial news and provide:
+1. A strict sentiment score (1-10): 1=Extremely Bearish, 5=Neutral, 10=Extremely Bullish
+2. Consider: price catalysts, earnings impact, macro factors, sector rotation, institutional sentiment
+3. Weight recent events more heavily than older ones
+IMPORTANT: Output ONLY valid JSON. No markdown code blocks. No introductory text.`,
             messages: [
                 {
                     role: "user",
-                    content: `Analyze the following news text for the stock "${symbol}". 
-                    Provide the output in valid JSON format ONLY, with keys: "score" (number 1-10), "summary" (max 2 sentences), "reasoning" (bullet points).
-                    
-                    News Text:
-                    ${text}`
+                    content: `Analyze the following news for "${symbol}".
+Consider: fundamental impact, short-term catalysts, risk factors, and market positioning.
+Output valid JSON with keys: "score" (number 1-10), "summary" (max 2 sentences), "reasoning" (concise bullet points of key factors).
+
+News Text:
+${text}`
                 }
             ]
         });

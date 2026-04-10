@@ -5,7 +5,7 @@ export interface NewsItem {
     title: string;
     publisher: string;
     link: string;
-    providerPublishTime: any; // Can be number, string, or Date object
+    providerPublishTime: any;
 }
 
 interface NewsFeedProps {
@@ -13,14 +13,20 @@ interface NewsFeedProps {
     sentimentDetails?: Record<string, 'Positive' | 'Negative' | 'Neutral'>;
 }
 
-// Helper to safely parse any date format
 const formatDate = (dateInput: any) => {
     if (!dateInput) return 'Unknown Date';
     try {
         const date = new Date(dateInput);
-        // Check if date is valid
         if (isNaN(date.getTime())) return 'Invalid Date';
-        return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        // Show relative time for recent articles
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        if (diffHours < 1) return 'Just now';
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        return date.toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric' });
     } catch (e) {
         return 'Invalid Date';
     }
@@ -32,56 +38,51 @@ const NewsFeed = ({ news, sentimentDetails }: NewsFeedProps) => {
     }
 
     return (
-        <div className="bg-white rounded-lg shadow p-4">
-            <h3 className="text-xl font-bold mb-4">Latest News</h3>
-            <div className="space-y-4">
-                {news.map((item) => {
-                    const sentiment = sentimentDetails ? sentimentDetails[item.title] : undefined;
-                    const isRelevant = !!sentiment;
+        <div className="space-y-3">
+            {news.map((item) => {
+                const sentiment = sentimentDetails ? sentimentDetails[item.title] : undefined;
+                const isRelevant = !!sentiment;
 
-                    let badgeColor = 'bg-gray-100 text-gray-800';
-                    let borderColor = 'border-gray-200';
-                    let titleColor = 'text-gray-800';
+                let badgeColor = 'bg-gray-100 text-gray-600';
+                let borderColor = 'border-gray-200';
+                let accentClass = '';
 
-                    if (sentiment === 'Positive') {
-                        badgeColor = 'bg-green-100 text-green-800';
-                        borderColor = 'border-green-500';
-                        titleColor = 'text-green-900';
-                    } else if (sentiment === 'Negative') {
-                        badgeColor = 'bg-red-100 text-red-800';
-                        borderColor = 'border-red-500';
-                        titleColor = 'text-red-900';
-                    } else if (sentiment === 'Neutral') {
-                        badgeColor = 'bg-gray-200 text-gray-800';
-                        borderColor = 'border-gray-400';
-                        titleColor = 'text-gray-900';
-                    }
+                if (sentiment === 'Positive') {
+                    badgeColor = 'bg-green-100 text-green-700';
+                    borderColor = 'border-green-400';
+                    accentClass = 'border-l-4 border-l-green-400 bg-green-50/30';
+                } else if (sentiment === 'Negative') {
+                    badgeColor = 'bg-red-100 text-red-700';
+                    borderColor = 'border-red-400';
+                    accentClass = 'border-l-4 border-l-red-400 bg-red-50/30';
+                } else if (sentiment === 'Neutral') {
+                    badgeColor = 'bg-gray-100 text-gray-600';
+                    accentClass = 'border-l-4 border-l-gray-300';
+                }
 
-                    return (
-                        <div
-                            key={item.uuid}
-                            className={`border-b pb-4 last:border-0 transition p-2 rounded-lg border
-                                      ${isRelevant ? 'bg-opacity-50 ' + borderColor.replace('border', 'bg').replace('500', '50') + ' border-l-4 ' + borderColor : 'hover:bg-gray-50 border-transparent'}`}
-                        >
-                            <a href={item.link} target="_blank" rel="noopener noreferrer" className="block group">
-                                <h4 className={`font-semibold mb-1 group-hover:text-blue-600 flex items-start gap-2 flex-wrap
-                                                ${isRelevant ? titleColor : 'text-gray-800'}`}>
-                                    {item.title}
-                                    {isRelevant && (
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold whitespace-nowrap ${badgeColor}`}>
-                                            {sentiment}
-                                        </span>
-                                    )}
-                                </h4>
-                                <div className="text-sm text-gray-500 flex justify-between">
-                                    <span>{item.publisher}</span>
-                                    <span>{formatDate(item.providerPublishTime)}</span>
-                                </div>
-                            </a>
+                return (
+                    <a
+                        key={item.uuid}
+                        href={item.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`block p-3 rounded-xl transition-all hover:shadow-sm ${isRelevant ? accentClass : 'hover:bg-gray-50'}`}
+                    >
+                        <h4 className="font-semibold text-sm text-gray-800 hover:text-indigo-600 flex items-start gap-2 flex-wrap leading-snug">
+                            {item.title}
+                            {isRelevant && (
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase tracking-wider font-bold whitespace-nowrap ${badgeColor}`}>
+                                    {sentiment}
+                                </span>
+                            )}
+                        </h4>
+                        <div className="text-xs text-gray-400 mt-1 flex justify-between">
+                            <span className="font-medium">{item.publisher}</span>
+                            <span>{formatDate(item.providerPublishTime)}</span>
                         </div>
-                    );
-                })}
-            </div>
+                    </a>
+                );
+            })}
         </div>
     );
 };

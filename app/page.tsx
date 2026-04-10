@@ -133,6 +133,42 @@ const TRANSLATIONS = {
 
 import { useMarketData, StockData, NewsResponse } from '@/hooks/useMarketData';
 
+// Helper: Get currency for a symbol
+const getCurrencyForSymbol = (symbol: string): string => {
+  if (symbol.endsWith('.DE') || symbol.endsWith('.PA')) return 'EUR';
+  if (symbol.endsWith('.L')) return 'GBP';
+  if (symbol.endsWith('=X')) return ''; // Forex pairs
+  return 'USD';
+};
+
+// Helper: Format price with correct currency
+const formatPrice = (price: number, symbol: string, locale: string): string => {
+  const currency = getCurrencyForSymbol(symbol);
+  if (!currency) return price.toFixed(4); // Forex
+  return price.toLocaleString(locale, { style: 'currency', currency });
+};
+
+// Helper: Detect if market is currently open (US Eastern Time)
+const isMarketOpen = (): boolean => {
+  const now = new Date();
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day = et.getDay(); // 0=Sun, 6=Sat
+  if (day === 0 || day === 6) return false;
+  const hours = et.getHours();
+  const minutes = et.getMinutes();
+  const timeInMinutes = hours * 60 + minutes;
+  return timeInMinutes >= 570 && timeInMinutes < 960; // 9:30 AM - 4:00 PM ET
+};
+
+// Helper: Calculate Risk/Reward ratio
+const getRiskRewardRatio = (price: number, stopLoss: number, takeProfit: number): string => {
+  const risk = Math.abs(price - stopLoss);
+  const reward = Math.abs(takeProfit - price);
+  if (risk === 0) return 'N/A';
+  const ratio = reward / risk;
+  return `1:${ratio.toFixed(1)}`;
+};
+
 export default function Home() {
   // --- State ---
 
@@ -255,18 +291,21 @@ export default function Home() {
             };
             return getSignalWeight(sumB?.recommendation) - getSignalWeight(sumA?.recommendation);
           case 'Combined':
-            const getCombinedScore = (sum: any) => {
+            const getCombinedScore = (sum: any, sym: string) => {
               if (!sum?.recommendation || !sum?.sentiment) return 0;
               let signalScore = 0;
               if (sum.recommendation.action === 'LONG') {
-                signalScore = sum.recommendation.confidence === 'HIGH' ? 2 : 1;
+                signalScore = sum.recommendation.confidence === 'HIGH' ? 3 : 1.5;
               } else if (sum.recommendation.action === 'SHORT') {
-                signalScore = sum.recommendation.confidence === 'HIGH' ? -2 : -1;
+                signalScore = sum.recommendation.confidence === 'HIGH' ? 3 : 1.5;
               }
-              const sentimentScore = sum.sentiment.score || 0;
-              return Math.abs(signalScore + sentimentScore);
+              const sentimentScore = Math.abs(sum.sentiment.score || 0);
+              // Factor in AI score (0-10, normalized to 0-2)
+              const ai = aiInsights[sym]?.score;
+              const aiBonus = ai ? Math.abs(ai - 5) / 2.5 : 0; // Distance from neutral, normalized
+              return signalScore + sentimentScore + aiBonus;
             };
-            return getCombinedScore(sumB) - getCombinedScore(sumA);
+            return getCombinedScore(sumB, b.symbol) - getCombinedScore(sumA, a.symbol);
           case 'Symbol':
           default:
             return a.symbol.localeCompare(b.symbol);
@@ -279,7 +318,7 @@ export default function Home() {
 
     // console.log("Filtered Assets:", sorted.length);
     return sorted;
-  }, [watchlist, activeCategory, searchQuery, sortOption, summaries]);
+  }, [watchlist, activeCategory, searchQuery, sortOption, summaries, aiInsights]);
 
   // --- handlers ---
 
@@ -432,11 +471,11 @@ export default function Home() {
                 recommendation={summaries[asset.symbol]?.recommendation}
                 sentiment={summaries[asset.symbol]?.sentiment}
                 aiScore={aiInsights[asset.symbol]?.score}
+                changePercent={summaries[asset.symbol]?.changePercent}
                 selected={selectedSymbol === asset.symbol}
                 onSelect={() => { setSelectedSymbol(asset.symbol); setShowMobileSidebar(false); }}
                 onRemove={(e) => removeAsset(e, asset.symbol)}
                 lang={lang}
-                // Only show skeleton if we have absolutely no data for this symbol
                 loading={!summaries[asset.symbol]}
               />
             </div>
@@ -452,7 +491,7 @@ export default function Home() {
 
         {/* Status Footer */}
         <div className="p-4 border-t border-gray-100 text-xs text-gray-400 flex justify-between bg-gray-50/50">
-          <span>{t.marketStatus}: <span className="text-green-600 font-bold">{t.open}</span></span>
+          <span>{t.marketStatus}: <span className={`font-bold ${isMarketOpen() ? 'text-green-600' : 'text-red-500'}`}>{isMarketOpen() ? t.open : t.closed}</span></span>
           <span>v2.1 {t.pro}</span>
         </div>
       </aside>
@@ -473,11 +512,22 @@ export default function Home() {
               {selectedSymbol}
             </h2>
             {stockData && (
-              <span className={`text-xl font-mono font-medium tracking-tight
-                         ${stockData.latest.close > stockData.latest.open ? 'text-green-600' : 'text-red-500'}
-                     `}>
-                {stockData.latest.close.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-xl font-mono font-medium tracking-tight
+                           ${stockData.latest.close > stockData.latest.open ? 'text-green-600' : 'text-red-500'}
+                       `}>
+                  {formatPrice(stockData.latest.close, selectedSymbol, locale)}
+                </span>
+                {summaries[selectedSymbol]?.changePercent !== undefined && (
+                  <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${summaries[selectedSymbol].changePercent! >= 0
+                    ? 'bg-green-50 text-green-700'
+                    : 'bg-red-50 text-red-700'
+                    }`}>
+                    {summaries[selectedSymbol].changePercent! >= 0 ? '+' : ''}
+                    {summaries[selectedSymbol].changePercent!.toFixed(2)}%
+                  </span>
+                )}
+              </div>
             )}
           </div>
           <div>
@@ -526,19 +576,25 @@ export default function Home() {
                     {stockData.recommendation.reason}.
                   </p>
 
-                  {/* Trading Plan (SL / TP) */}
+                  {/* Trading Plan (SL / TP / R:R) */}
                   {(stockData.recommendation.stopLoss && stockData.recommendation.takeProfit) && (
-                    <div className="mt-6 grid grid-cols-2 gap-4">
+                    <div className="mt-6 grid grid-cols-3 gap-4">
                       <div className="p-3 bg-red-50 rounded-xl border border-red-100 flex flex-col">
                         <span className="text-xs font-bold text-red-400 uppercase tracking-wide mb-1">{t.stopLoss}</span>
                         <span className="text-lg font-bold text-red-700">
-                          {stockData.recommendation.stopLoss.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
+                          {formatPrice(stockData.recommendation.stopLoss, selectedSymbol, locale)}
                         </span>
                       </div>
                       <div className="p-3 bg-green-50 rounded-xl border border-green-100 flex flex-col">
                         <span className="text-xs font-bold text-green-400 uppercase tracking-wide mb-1">{t.takeProfit}</span>
                         <span className="text-lg font-bold text-green-700">
-                          {stockData.recommendation.takeProfit.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
+                          {formatPrice(stockData.recommendation.takeProfit, selectedSymbol, locale)}
+                        </span>
+                      </div>
+                      <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col">
+                        <span className="text-xs font-bold text-indigo-400 uppercase tracking-wide mb-1">Risk:Reward</span>
+                        <span className="text-lg font-bold text-indigo-700">
+                          {getRiskRewardRatio(stockData.latest.close, stockData.recommendation.stopLoss, stockData.recommendation.takeProfit)}
                         </span>
                       </div>
                     </div>
@@ -686,11 +742,6 @@ export default function Home() {
               {t.selectAsset}
             </div>
           )}
-        </div>
-        {/* Debug Overlay */}
-        <div className="fixed bottom-4 left-4 bg-black/80 text-white p-2 rounded text-xs font-mono z-50 pointer-events-none">
-          Assets: {watchlist.length} | Filtered: {filteredAndSortedAssets.length} | Sums: {Object.keys(summaries).length} <br />
-          Cat: {activeCategory} | Search: "{searchQuery}"
         </div>
       </main>
     </div>

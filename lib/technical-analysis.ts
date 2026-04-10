@@ -1,4 +1,4 @@
-import { SMA, RSI, MACD, EMA, BollingerBands } from 'technicalindicators';
+import { SMA, RSI, MACD, EMA, BollingerBands, ATR } from 'technicalindicators';
 
 export interface StockDataPoint {
     date: string;
@@ -26,12 +26,15 @@ export interface StockDataPoint {
         pb?: number;
     };
     atr?: number;
+    volumeSma20?: number;
 }
 
 // Input can be raw Yahoo Finance data which has Date objects
 export const calculateIndicators = (data: any[]): StockDataPoint[] => {
-    // Extract closing prices for calculations
+    // Extract OHLC prices for calculations
     const closes = data.map((d) => d.close);
+    const highs = data.map((d) => d.high);
+    const lows = data.map((d) => d.low);
 
     // Calculate SMA & EMA
     const sma20 = SMA.calculate({ period: 20, values: closes });
@@ -56,6 +59,13 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
         SimpleMASignal: false,
     };
     const macd = MACD.calculate(macdInput);
+
+    // Calculate ATR (14-period) for proper Stop Loss / Take Profit levels
+    const atr14 = ATR.calculate({ period: 14, high: highs, low: lows, close: closes });
+
+    // Calculate Volume SMA (20-period) for volume confirmation
+    const volumes = data.map((d) => d.volume || 0);
+    const volumeSma20 = SMA.calculate({ period: 20, values: volumes });
 
     // Align indicators with original data
     // Note: Indicators result in fewer data points (shifting needed).
@@ -92,6 +102,8 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
             rsi70: getIndicatorValue(rsi70, data.length - rsi70.length),
             bb: getIndicatorValue(bb, data.length - bb.length),
             macd: getIndicatorValue(macd, data.length - macd.length),
+            atr: getIndicatorValue(atr14, data.length - atr14.length),
+            volumeSma20: getIndicatorValue(volumeSma20, data.length - volumeSma20.length),
         };
     });
 

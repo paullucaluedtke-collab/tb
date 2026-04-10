@@ -7,17 +7,27 @@ const ti = require('technicalindicators');
 const WORD_WEIGHTS: Record<string, number> = {
     // Strong Positive (+3)
     'skyrocket': 3, 'surge': 3, 'record': 3, 'soar': 3, 'bull': 3,
+    'breakout': 3, 'all-time high': 3, 'blowout': 3, 'moonshot': 3,
     // Moderate Positive (+2)
     'jump': 2, 'gain': 2, 'beat': 2, 'strong': 2, 'growth': 2, 'profit': 2, 'upgrade': 2,
+    'rally': 2, 'outperform': 2, 'exceed': 2, 'rebound': 2, 'recover': 2,
+    'dividend': 2, 'buyback': 2, 'momentum': 2, 'boom': 2, 'accelerat': 2,
     // Weak Positive (+1)
     'up': 1, 'high': 1, 'buy': 1, 'optimis': 1, 'revenue': 1,
+    'expand': 1, 'improve': 1, 'positive': 1, 'overweight': 1, 'opportunity': 1,
+    'innovative': 1, 'partnership': 1, 'approval': 1, 'launch': 1,
 
     // Strong Negative (-3)
     'crash': -3, 'plunge': -3, 'collapse': -3, 'bear': -3, 'recession': -3, 'panic': -3,
+    'bankrupt': -3, 'fraud': -3, 'default': -3, 'liquidat': -3, 'crisis': -3,
     // Moderate Negative (-2)
     'drop': -2, 'fall': -2, 'miss': -2, 'loss': -2, 'downgrade': -2, 'weak': -2, 'risk': -2,
+    'layoff': -2, 'cut': -2, 'warning': -2, 'underperform': -2, 'slump': -2,
+    'investigation': -2, 'lawsuit': -2, 'tariff': -2, 'sanction': -2, 'delay': -2,
     // Weak Negative (-1)
-    'down': -1, 'low': -1, 'sell': -1, 'decline': -1, 'pessimis': -1, 'inflation': -1
+    'down': -1, 'low': -1, 'sell': -1, 'decline': -1, 'pessimis': -1, 'inflation': -1,
+    'uncertain': -1, 'volatil': -1, 'concern': -1, 'underweight': -1, 'headwind': -1,
+    'slowdown': -1, 'pressure': -1, 'struggle': -1
 };
 
 export interface SentimentResult {
@@ -173,6 +183,10 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const isGoldenCross = (latest.sma50 || 0) > (latest.sma200 || 0) && (prev.sma50 || 0) <= (prev.sma200 || 0);
     const isDeathCross = (latest.sma50 || 0) < (latest.sma200 || 0) && (prev.sma50 || 0) >= (prev.sma200 || 0);
 
+    // Volume Confirmation: High volume confirms trend signals
+    const volumeAboveAvg = latest.volume > (latest.volumeSma20 || 0) * 1.0;
+    const volumeSpike = latest.volume > (latest.volumeSma20 || 0) * 1.5;
+
     // ATR for Stop Loss / Take Profit
     const atr = latest.atr || (latest.high - latest.low); // Fallback
     const calculateExits = (action: 'LONG' | 'SHORT', price: number, atrValue: number) => {
@@ -229,12 +243,17 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     }
 
     if (longTriggered) {
+        // Volume confirmation upgrades confidence
+        if (volumeSpike && longConfidence === 'MEDIUM') longConfidence = 'HIGH';
+        if (volumeAboveAvg) longReason += ' + Volume Confirmed';
+        if (volumeSpike) longReason += ' (Spike)';
+
         const exits = calculateExits('LONG', latest.close, atr);
         return {
             action: 'LONG',
             reason: longReason,
             confidence: longConfidence,
-            patterns: mode !== 'long_term' ? patterns : [], // Don't show daily patterns on long term
+            patterns: mode !== 'long_term' ? patterns : [],
             signalStatus: 'FORMING',
             ...exits
         };
@@ -277,6 +296,11 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     }
 
     if (shortTriggered) {
+        // Volume confirmation upgrades confidence
+        if (volumeSpike && shortConfidence === 'MEDIUM') shortConfidence = 'HIGH';
+        if (volumeAboveAvg) shortReason += ' + Volume Confirmed';
+        if (volumeSpike) shortReason += ' (Spike)';
+
         const exits = calculateExits('SHORT', latest.close, atr);
         return {
             action: 'SHORT',

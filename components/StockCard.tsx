@@ -13,10 +13,19 @@ interface StockCardProps {
     selected: boolean;
     onRemove: (e: React.MouseEvent) => void;
     lang?: 'en' | 'de';
-    aiScore?: number; // New Prop
+    aiScore?: number;
+    changePercent?: number;
 }
 
-const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect, selected, onRemove, lang = 'en', aiScore }: StockCardProps) => {
+// Helper to get currency for a symbol
+const getCurrencyForSymbol = (symbol: string): string => {
+    if (symbol.endsWith('.DE') || symbol.endsWith('.PA')) return 'EUR';
+    if (symbol.endsWith('.L')) return 'GBP';
+    if (symbol.endsWith('=X')) return ''; // Forex pairs don't need currency symbol
+    return 'USD';
+};
+
+const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect, selected, onRemove, lang = 'en', aiScore, changePercent }: StockCardProps) => {
     if (loading) {
         return (
             <div className="bg-white/50 backdrop-blur-sm rounded-2xl p-5 animate-pulse h-40 flex flex-col justify-between border border-gray-100">
@@ -42,10 +51,10 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
     let recBg = 'bg-gray-100 text-gray-600';
     let RecIcon = Minus;
     if (recommendation?.action === 'LONG') {
-        recBg = 'bg-green-500/10 text-green-700'; // Soft green background
+        recBg = 'bg-green-500/10 text-green-700';
         RecIcon = TrendingUp;
     } else if (recommendation?.action === 'SHORT') {
-        recBg = 'bg-red-500/10 text-red-700'; // Soft red background
+        recBg = 'bg-red-500/10 text-red-700';
         RecIcon = TrendingDown;
     }
 
@@ -61,6 +70,12 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
     }
 
     const locale = lang === 'de' ? 'de-DE' : 'en-US';
+    const currency = getCurrencyForSymbol(symbol);
+
+    const formatPrice = (price: number) => {
+        if (!currency) return price.toFixed(4); // Forex
+        return price.toLocaleString(locale, { style: 'currency', currency });
+    };
 
     return (
         <div
@@ -76,24 +91,34 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
                 <div>
                     <h3 className="text-lg font-bold text-gray-900 tracking-tight">{symbol}</h3>
                     {data && data.close !== undefined ? (
-                        <p className="text-2xl font-medium text-gray-900 tracking-tight mt-1">
-                            {data.close.toLocaleString(locale, { style: 'currency', currency: 'USD' })}
-                            {/* Repainting Warning */}
-                            {recommendation?.signalStatus === 'FORMING' && (
-                                <span className="ml-2 text-[10px] bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded border border-yellow-200" title="Signal based on open candle">
-                                    FORMING
-                                </span>
-                            )}
-                            {/* AI Score Badge */}
-                            {aiScore !== undefined && (
-                                <span className={`ml-2 text-[10px] px-1.5 py-0.5 rounded border font-bold ${aiScore >= 7 ? 'bg-indigo-100 text-indigo-700 border-indigo-200' :
-                                    aiScore <= 4 ? 'bg-red-50 text-red-600 border-red-100' :
-                                        'bg-indigo-50 text-indigo-500 border-indigo-100'
-                                    }`}>
-                                    AI: {aiScore}/10
-                                </span>
-                            )}
-                        </p>
+                        <div className="mt-1">
+                            <p className="text-2xl font-medium text-gray-900 tracking-tight">
+                                {formatPrice(data.close)}
+                            </p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                {/* Daily % Change */}
+                                {changePercent !== undefined && (
+                                    <span className={`text-xs font-bold ${changePercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {changePercent >= 0 ? '+' : ''}{changePercent.toFixed(2)}%
+                                    </span>
+                                )}
+                                {/* Repainting Warning */}
+                                {recommendation?.signalStatus === 'FORMING' && (
+                                    <span className="text-[10px] bg-yellow-100 text-yellow-800 px-1 py-0.5 rounded border border-yellow-200" title="Signal based on open candle">
+                                        FORMING
+                                    </span>
+                                )}
+                                {/* AI Score Badge */}
+                                {aiScore !== undefined && (
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold ${aiScore >= 7 ? 'bg-indigo-100 text-indigo-700 border-indigo-200' :
+                                        aiScore <= 4 ? 'bg-red-50 text-red-600 border-red-100' :
+                                            'bg-indigo-50 text-indigo-500 border-indigo-100'
+                                        }`}>
+                                        AI: {aiScore}/10
+                                    </span>
+                                )}
+                            </div>
+                        </div>
                     ) : (
                         <p className="text-sm text-gray-400 mt-1">--</p>
                     )}
@@ -115,6 +140,9 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
                     <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${recBg}`}>
                         <RecIcon size={14} strokeWidth={2.5} />
                         <span>{t[recommendation.action as keyof typeof t] || recommendation.action}</span>
+                        {recommendation.confidence === 'HIGH' && (
+                            <span className="ml-1 text-[9px] opacity-70">HIGH</span>
+                        )}
                     </div>
                 )}
 

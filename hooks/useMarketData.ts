@@ -47,7 +47,7 @@ export const useMarketData = (
     // State
     const [stockData, setStockData] = useState<StockData | null>(null);
     const [newsData, setNewsData] = useState<NewsResponse | null>(null);
-    const [summaries, setSummaries] = useState<Record<string, { price: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
+    const [summaries, setSummaries] = useState<Record<string, { price: number, change?: number, changePercent?: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
     const [aiInsights, setAiInsights] = useState<Record<string, AIResult>>({});
     const [loading, setLoading] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
@@ -175,6 +175,8 @@ export const useMarketData = (
                                 next[item.symbol] = {
                                     ...next[item.symbol],
                                     price: item.price,
+                                    change: item.change,
+                                    changePercent: item.changePercent,
                                     // Use minimal default if it doesn't exist yet, wait for deep analysis
                                     recommendation: next[item.symbol]?.recommendation || { action: 'WAIT', confidence: 'LOW', reason: 'Loading...' },
                                     sentiment: next[item.symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }

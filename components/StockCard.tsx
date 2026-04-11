@@ -15,6 +15,8 @@ interface StockCardProps {
     lang?: 'en' | 'de';
     aiScore?: number;
     changePercent?: number;
+    fiftyTwoWeekHigh?: number;
+    fiftyTwoWeekLow?: number;
 }
 
 // Helper to get currency for a symbol
@@ -25,7 +27,7 @@ const getCurrencyForSymbol = (symbol: string): string => {
     return 'USD';
 };
 
-const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect, selected, onRemove, lang = 'en', aiScore, changePercent }: StockCardProps) => {
+const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect, selected, onRemove, lang = 'en', aiScore, changePercent, fiftyTwoWeekHigh, fiftyTwoWeekLow }: StockCardProps) => {
     if (loading) {
         return (
             <div className="bg-white/50 backdrop-blur-sm rounded-2xl p-5 animate-pulse h-40 flex flex-col justify-between border border-gray-100">
@@ -133,6 +135,23 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
                     </div>
                 )}
             </div>
+
+            {/* 52-Week Range Bar */}
+            {fiftyTwoWeekHigh && fiftyTwoWeekLow && data?.close && (
+                <div className="mt-3">
+                    <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 mb-0.5">
+                        <span>{formatPrice(fiftyTwoWeekLow)}</span>
+                        <span className="text-[9px] uppercase tracking-wider font-bold">52W</span>
+                        <span>{formatPrice(fiftyTwoWeekHigh)}</span>
+                    </div>
+                    <div className="h-1.5 bg-gray-100 dark:bg-gray-700 rounded-full w-full relative">
+                        <div
+                            className="absolute top-1/2 -translate-y-1/2 w-2 h-2 bg-indigo-500 rounded-full border border-white dark:border-gray-800 shadow-sm"
+                            style={{ left: `${Math.min(100, Math.max(0, ((data.close - fiftyTwoWeekLow) / (fiftyTwoWeekHigh - fiftyTwoWeekLow)) * 100))}%` }}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* Footer: Recommendation & Patterns */}
             <div className="mt-4 flex items-center justify-between">

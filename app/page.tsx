@@ -1,18 +1,17 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import StockChart from '@/components/StockChart';
 import NewsFeed from '@/components/NewsFeed';
 import StockCard from '@/components/StockCard';
 import DeepAnalysisCard from '@/components/DeepAnalysisCard';
+import PositionCalculator from '@/components/PositionCalculator';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
-// Icons
 import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
-  Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X
+  Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers
 } from 'lucide-react';
-// Asset Config
 import { ASSETS, Asset } from '@/config/assets';
 
 // Types
@@ -195,7 +194,13 @@ export default function Home() {
   const [mode, setMode] = useState<'swing' | 'scalp' | 'long_term'>('swing');
 
   // Use Custom Hook for Data Fetching
-  const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated, triggerAiAnalysis } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
+  const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated, triggerAiAnalysis, multiTimeframe, fetchMultiTimeframe } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
+
+  // Dark Mode
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Multi-Timeframe toggle
+  const [showMultiTF, setShowMultiTF] = useState(false);
 
   // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
@@ -203,6 +208,29 @@ export default function Home() {
   const [translationError, setTranslationError] = useState<string | null>(null);
 
   // --- Effects ---
+
+  // DARK MODE: Apply to <html> + persist
+  useEffect(() => {
+    const saved = localStorage.getItem('sb_darkMode');
+    if (saved === 'true') setDarkMode(true);
+  }, []);
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    localStorage.setItem('sb_darkMode', String(darkMode));
+  }, [darkMode]);
+
+  // LOCALSTORAGE: Persist preferences
+  useEffect(() => {
+    const savedLang = localStorage.getItem('sb_lang') as 'en' | 'de' | null;
+    const savedMode = localStorage.getItem('sb_mode') as 'swing' | 'scalp' | 'long_term' | null;
+    const savedSort = localStorage.getItem('sb_sort') as SortOption | null;
+    if (savedLang) setLang(savedLang);
+    if (savedMode) setMode(savedMode);
+    if (savedSort) setSortOption(savedSort);
+  }, []);
+  useEffect(() => { localStorage.setItem('sb_lang', lang); }, [lang]);
+  useEffect(() => { localStorage.setItem('sb_mode', mode); }, [mode]);
+  useEffect(() => { localStorage.setItem('sb_sort', sortOption); }, [sortOption]);
 
   // 3. TRANSLATION EFFECT (Keep specific UI logic here)
   useEffect(() => {
@@ -320,6 +348,25 @@ export default function Home() {
     return sorted;
   }, [watchlist, activeCategory, searchQuery, sortOption, summaries, aiInsights]);
 
+  // KEYBOARD NAVIGATION: Arrow keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const currentIdx = filteredAndSortedAssets.findIndex(a => a.symbol === selectedSymbol);
+        let nextIdx = currentIdx;
+        if (e.key === 'ArrowDown') nextIdx = Math.min(currentIdx + 1, filteredAndSortedAssets.length - 1);
+        if (e.key === 'ArrowUp') nextIdx = Math.max(currentIdx - 1, 0);
+        if (nextIdx !== currentIdx && filteredAndSortedAssets[nextIdx]) {
+          setSelectedSymbol(filteredAndSortedAssets[nextIdx].symbol);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedSymbol, filteredAndSortedAssets]);
+
   // --- handlers ---
 
   const removeAsset = (e: React.MouseEvent, symbol: string) => {
@@ -340,7 +387,7 @@ export default function Home() {
   const locale = lang === 'de' ? 'de-DE' : 'en-US';
 
   return (
-    <div className="flex h-screen bg-[#F5F5F7] font-sans text-slate-800 overflow-hidden relative">
+    <div className={`flex h-screen font-sans overflow-hidden relative ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-[#F5F5F7] text-slate-800'}`}>
 
       {/* --- Mobile Sidebar Overlay --- */}
       {showMobileSidebar && (
@@ -351,12 +398,12 @@ export default function Home() {
       )}
 
       {/* --- Sidebar (Watchlist) --- */}
-      <aside className={`absolute z-50 md:relative w-full sm:w-[400px] md:w-[400px] h-full flex flex-col border-r border-gray-200 bg-white/95 md:bg-white/80 backdrop-blur-xl transition-transform duration-300 ease-in-out ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <aside className={`absolute z-50 md:relative w-full sm:w-[400px] md:w-[400px] h-full flex flex-col border-r backdrop-blur-xl transition-transform duration-300 ease-in-out ${darkMode ? 'border-gray-700 bg-gray-800/95 md:bg-gray-800/80' : 'border-gray-200 bg-white/95 md:bg-white/80'} ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
 
         {/* Sidebar Header */}
         <div className="p-4 md:p-6 pb-2">
           <div className="flex justify-between items-start mb-4">
-            <h1 className="text-xl font-bold flex items-center gap-2 text-slate-800 tracking-tight">
+            <h1 className={`text-xl font-bold flex items-center gap-2 tracking-tight ${darkMode ? 'text-gray-100' : 'text-slate-800'}`}>
               <div className="bg-indigo-600 text-white p-1.5 rounded-lg">
                 <TrendingUp size={20} />
               </div>
@@ -364,17 +411,24 @@ export default function Home() {
             </h1>
 
             <div className="flex items-center gap-2">
+              {/* Dark Mode Toggle */}
+              <button
+                onClick={() => setDarkMode(!darkMode)}
+                className={`p-1.5 rounded-lg transition-all ${darkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-400 hover:text-gray-600'}`}
+              >
+                {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
               {/* Language Toggle */}
-              <div className="bg-gray-100 p-1 rounded-lg flex text-xs font-bold">
+              <div className={`p-1 rounded-lg flex text-xs font-bold ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 <button
                   onClick={() => setLang('en')}
-                  className={`px-2 py-1 rounded-md transition-all ${lang === 'en' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                  className={`px-2 py-1 rounded-md transition-all ${lang === 'en' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
                 >
                   EN
                 </button>
                 <button
                   onClick={() => setLang('de')}
-                  className={`px-2 py-1 rounded-md transition-all ${lang === 'de' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+                  className={`px-2 py-1 rounded-md transition-all ${lang === 'de' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
                 >
                   DE
                 </button>
@@ -397,27 +451,27 @@ export default function Home() {
               placeholder={t.searchPlaceholder}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-gray-100 rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium"
+              className={`w-full rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'bg-gray-100'}`}
             />
           </div>
 
           {/* Mode Toggle */}
-          <div className="flex bg-gray-100 p-1 rounded-xl mt-4 mx-1 gap-1">
+          <div className={`flex p-1 rounded-xl mt-4 mx-1 gap-1 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
             <button
               onClick={() => setMode('swing')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'swing' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'swing' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
             >
               {t.mode.swing}
             </button>
             <button
               onClick={() => setMode('scalp')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'scalp' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'scalp' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
             >
               {t.mode.scalp}
             </button>
             <button
               onClick={() => setMode('long_term')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'long_term' ? 'bg-white shadow text-indigo-600' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'long_term' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
             >
               {t.mode.long_term}
             </button>
@@ -432,7 +486,7 @@ export default function Home() {
                 className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap snap-start shrink-0
                             ${activeCategory === cat
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}
+                    : darkMode ? 'bg-gray-700 text-gray-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}
                         `}
               >
                 {getCategoryLabel(cat)}
@@ -472,6 +526,8 @@ export default function Home() {
                 sentiment={summaries[asset.symbol]?.sentiment}
                 aiScore={aiInsights[asset.symbol]?.score}
                 changePercent={summaries[asset.symbol]?.changePercent}
+                fiftyTwoWeekHigh={summaries[asset.symbol]?.fiftyTwoWeekHigh}
+                fiftyTwoWeekLow={summaries[asset.symbol]?.fiftyTwoWeekLow}
                 selected={selectedSymbol === asset.symbol}
                 onSelect={() => { setSelectedSymbol(asset.symbol); setShowMobileSidebar(false); }}
                 onRemove={(e) => removeAsset(e, asset.symbol)}
@@ -490,17 +546,17 @@ export default function Home() {
         </div>
 
         {/* Status Footer */}
-        <div className="p-4 border-t border-gray-100 text-xs text-gray-400 flex justify-between bg-gray-50/50">
+        <div className={`p-4 border-t text-xs text-gray-400 flex justify-between ${darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
           <span>{t.marketStatus}: <span className={`font-bold ${isMarketOpen() ? 'text-green-600' : 'text-red-500'}`}>{isMarketOpen() ? t.open : t.closed}</span></span>
-          <span>v2.1 {t.pro}</span>
+          <span>v3.0 {t.pro}</span>
         </div>
       </aside>
 
 
       {/* --- Main Content --- */}
-      <main className="flex-1 flex flex-col bg-[#F5F5F7] overflow-hidden">
+      <main className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-[#F5F5F7]'}`}>
         {/* Top Bar */}
-        <header className="h-16 flex items-center justify-between px-4 md:px-8 border-b border-gray-200/50 bg-white/50 backdrop-blur-md z-10 sticky top-0">
+        <header className={`h-16 flex items-center justify-between px-4 md:px-8 border-b backdrop-blur-md z-10 sticky top-0 ${darkMode ? 'border-gray-700/50 bg-gray-800/50' : 'border-gray-200/50 bg-white/50'}`}>
           <div className="flex items-center gap-3 md:gap-4">
             <button
               className="md:hidden p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
@@ -508,7 +564,7 @@ export default function Home() {
             >
               <Menu size={24} />
             </button>
-            <h2 className="text-xl md:text-2xl font-black text-gray-800 tracking-tight">
+            <h2 className={`text-xl md:text-2xl font-black tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
               {selectedSymbol}
             </h2>
             {stockData && (
@@ -532,7 +588,7 @@ export default function Home() {
           </div>
           <div>
             {lastUpdated && (
-              <div className="flex items-center gap-2 text-xs font-medium text-gray-400 bg-gray-100 px-3 py-1.5 rounded-full">
+              <div className={`flex items-center gap-2 text-xs font-medium text-gray-400 px-3 py-1.5 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} />
                 {t.updated} {lastUpdated.toLocaleTimeString(locale)}
               </div>
@@ -554,7 +610,7 @@ export default function Home() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                 {/* 1. Technical Signal Card */}
-                <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100 flex flex-col justify-between">
+                <div className={`rounded-3xl p-5 md:p-8 shadow-sm border flex flex-col justify-between ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                   <div className="flex flex-col sm:flex-row justify-between items-start gap-3 sm:gap-0 mb-4">
                     <div>
                       <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t.technicalSignal}</h3>
@@ -572,7 +628,7 @@ export default function Home() {
                     </span>
                   </div>
 
-                  <p className="text-gray-600 font-medium leading-relaxed">
+                  <p className={`font-medium leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                     {stockData.recommendation.reason}.
                   </p>
 
@@ -621,7 +677,7 @@ export default function Home() {
                 </div>
 
                 {/* 2. Sentiment Card */}
-                <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100">
+                <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                   <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">{t.marketHype}</h3>
 
                   {newsData?.sentiment ? (
@@ -663,24 +719,23 @@ export default function Home() {
 
               {/* About Section */}
               {stockData.profile && (
-                <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100">
+                <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0 mb-4">
-                    <h3 className="text-lg font-bold text-gray-900">{t.about} {stockData.symbol}</h3>
+                    <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t.about} {stockData.symbol}</h3>
                     <div className="flex gap-2">
                       {stockData.profile.sector && (
-                        <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-semibold text-gray-600">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
                           {stockData.profile.sector}
                         </span>
                       )}
                       {stockData.profile.industry && (
-                        <span className="px-3 py-1 bg-gray-100 rounded-full text-xs font-semibold text-gray-600 hidden sm:inline-block">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold hidden sm:inline-block ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
                           {stockData.profile.industry}
                         </span>
                       )}
                     </div>
                   </div>
-                  <p className="text-gray-600 text-sm leading-relaxed max-h-40 overflow-y-auto custom-scrollbar pr-2">
-                    {/* Handle "No description available" specially */}
+                  <p className={`text-sm leading-relaxed max-h-40 overflow-y-auto custom-scrollbar pr-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
                     {stockData.profile.description === 'No description available.' ? (
                       <span className="italic text-gray-400">{t.noDescription}</span>
                     ) : isTranslating ? (
@@ -695,7 +750,7 @@ export default function Home() {
                     )}
                   </p>
                   {stockData.profile.website && (
-                    <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className={`mt-4 pt-4 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
                       <a
                         href={stockData.profile.website}
                         target="_blank"
@@ -709,11 +764,63 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Chart Section */}
-              <div className="bg-white rounded-3xl p-3 sm:p-5 md:p-8 shadow-sm border border-gray-100">
-                <h3 className="text-lg font-bold text-gray-900 mb-4 sm:mb-6 px-2">{t.priceAction}</h3>
-                <StockChart data={stockData.data} />
+              {/* Multi-Timeframe Overview */}
+              <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <Layers size={18} className="text-indigo-500" />
+                    <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                      {lang === 'de' ? 'Multi-Timeframe Signale' : 'Multi-Timeframe Signals'}
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => { setShowMultiTF(!showMultiTF); if (!multiTimeframe) fetchMultiTimeframe(); }}
+                    className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${showMultiTF ? 'bg-indigo-600 text-white border-indigo-600' : (darkMode ? 'border-gray-600 text-gray-400 hover:text-white' : 'border-gray-200 text-gray-500 hover:text-indigo-600')}`}
+                  >
+                    {showMultiTF ? (lang === 'de' ? 'Ausblenden' : 'Hide') : (lang === 'de' ? 'Anzeigen' : 'Show')}
+                  </button>
+                </div>
+                {showMultiTF && multiTimeframe && (
+                  <div className="grid grid-cols-3 gap-3">
+                    {(['scalp', 'swing', 'long_term'] as const).map(m => {
+                      const rec = multiTimeframe[m];
+                      if (!rec) return null;
+                      const modeLabel = m === 'scalp' ? 'Day Trade' : m === 'swing' ? 'Swing' : 'Long Term';
+                      return (
+                        <div key={m} className={`p-3 rounded-xl border text-center ${darkMode ? 'border-gray-600' : 'border-gray-100'}`}>
+                          <div className="text-xs font-bold text-gray-400 uppercase mb-2">{modeLabel}</div>
+                          <div className={`text-lg font-black ${rec.action === 'LONG' ? 'text-green-500' : rec.action === 'SHORT' ? 'text-red-500' : 'text-gray-400'}`}>
+                            {rec.action}
+                          </div>
+                          <div className="text-[10px] text-gray-500 mt-1">{rec.confidence}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {showMultiTF && !multiTimeframe && (
+                  <div className="text-center py-4 text-gray-400 text-sm animate-pulse">{lang === 'de' ? 'Lade...' : 'Loading...'}</div>
+                )}
               </div>
+
+              {/* Chart Section */}
+              <div className={`rounded-3xl p-3 sm:p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                <h3 className={`text-lg font-bold mb-4 sm:mb-6 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t.priceAction}</h3>
+                <StockChart data={stockData.data} mode={mode} />
+              </div>
+
+              {/* Position Calculator */}
+              <PositionCalculator
+                symbol={selectedSymbol}
+                entryPrice={stockData.latest.close}
+                stopLoss={stockData.recommendation.stopLoss}
+                takeProfit={stockData.recommendation.takeProfit}
+                action={stockData.recommendation.action}
+                reason={stockData.recommendation.reason}
+                confidence={stockData.recommendation.confidence}
+                lang={lang}
+                formatPrice={(p: number) => formatPrice(p, selectedSymbol, locale)}
+              />
 
               {/* Deep Analysis Section */}
               <div className="mb-8">
@@ -728,10 +835,10 @@ export default function Home() {
               </div>
 
               {/* News Section */}
-              <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-gray-100">
+              <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-lg font-bold text-gray-900">{t.latestIntel}</h3>
-                  <span className="text-xs font-bold px-2 py-1 bg-gray-100 rounded text-gray-500">
+                  <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t.latestIntel}</h3>
+                  <span className={`text-xs font-bold px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
                     {newsData?.news?.length} {t.articles}
                   </span>
                 </div>

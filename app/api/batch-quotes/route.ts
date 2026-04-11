@@ -33,7 +33,10 @@ export async function POST(request: Request) {
                 symbol: q.symbol,
                 price: q.regularMarketPrice || q.postMarketPrice || q.preMarketPrice,
                 change: q.regularMarketChange,
-                changePercent: q.regularMarketChangePercent
+                changePercent: q.regularMarketChangePercent,
+                fiftyTwoWeekHigh: q.fiftyTwoWeekHigh,
+                fiftyTwoWeekLow: q.fiftyTwoWeekLow,
+                marketCap: q.marketCap,
             };
         });
 

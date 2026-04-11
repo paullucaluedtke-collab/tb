@@ -183,6 +183,32 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const isGoldenCross = (latest.sma50 || 0) > (latest.sma200 || 0) && (prev.sma50 || 0) <= (prev.sma200 || 0);
     const isDeathCross = (latest.sma50 || 0) < (latest.sma200 || 0) && (prev.sma50 || 0) >= (prev.sma200 || 0);
 
+    // EMA 9/21 Crossover (Scalp-specific fast signals)
+    const ema9BullishCross = (latest.ema9 || 0) > (latest.ema21 || 0) && (prev.ema9 || 0) <= (prev.ema21 || 0);
+    const ema9BearishCross = (latest.ema9 || 0) < (latest.ema21 || 0) && (prev.ema9 || 0) >= (prev.ema21 || 0);
+
+    // RSI Divergence Detection (look back 10 bars for price/RSI divergence)
+    let bullishDivergence = false;
+    let bearishDivergence = false;
+    if (data.length >= 15) {
+        const lookback = data.slice(-15);
+        const priceMin = Math.min(...lookback.map(d => d.low));
+        const priceMax = Math.max(...lookback.map(d => d.high));
+        const rsiValues = lookback.map(d => d.rsi14).filter(v => v !== undefined) as number[];
+        if (rsiValues.length >= 10) {
+            const rsiMin = Math.min(...rsiValues);
+            const rsiMax = Math.max(...rsiValues);
+            // Bullish divergence: price makes new low but RSI makes higher low
+            if (latest.low <= priceMin * 1.01 && (latest.rsi14 || 50) > rsiMin + 3) {
+                bullishDivergence = true;
+            }
+            // Bearish divergence: price makes new high but RSI makes lower high
+            if (latest.high >= priceMax * 0.99 && (latest.rsi14 || 50) < rsiMax - 3) {
+                bearishDivergence = true;
+            }
+        }
+    }
+
     // Volume Confirmation: High volume confirms trend signals
     const volumeAboveAvg = latest.volume > (latest.volumeSma20 || 0) * 1.0;
     const volumeSpike = latest.volume > (latest.volumeSma20 || 0) * 1.5;
@@ -233,13 +259,21 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             longConfidence = (bbLowerHit || hasBullishPattern) ? 'HIGH' : 'MEDIUM';
         }
     } else { // Scalp
-        if (isUptrend && (isOversold || macdBullishCross || hasBullishPattern) && sentimentGateLong) {
+        if (isUptrend && (isOversold || macdBullishCross || ema9BullishCross || hasBullishPattern) && sentimentGateLong) {
             longTriggered = true;
             if (isOversold) longReason += ' + RSI Oversold';
             if (macdBullishCross) longReason += ' + MACD Bullish Cross';
+            if (ema9BullishCross) longReason += ' + EMA 9/21 Bullish Cross';
             if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
-            longConfidence = hasBullishPattern ? 'HIGH' : 'MEDIUM';
+            longConfidence = (hasBullishPattern || ema9BullishCross) ? 'HIGH' : 'MEDIUM';
         }
+    }
+
+    // RSI Divergence can trigger even without full trend alignment
+    if (!longTriggered && bullishDivergence && sentimentGateLong && mode !== 'long_term') {
+        longTriggered = true;
+        longReason = 'Bullish RSI Divergence';
+        longConfidence = 'MEDIUM';
     }
 
     if (longTriggered) {
@@ -286,13 +320,21 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             shortConfidence = (bbUpperHit || hasBearishPattern) ? 'HIGH' : 'MEDIUM';
         }
     } else { // Scalp
-        if (isDowntrend && (isOverbought || macdBearishCross || hasBearishPattern) && sentimentGateShort) {
+        if (isDowntrend && (isOverbought || macdBearishCross || ema9BearishCross || hasBearishPattern) && sentimentGateShort) {
             shortTriggered = true;
             if (isOverbought) shortReason += ' + RSI Overbought';
             if (macdBearishCross) shortReason += ' + MACD Bearish Cross';
+            if (ema9BearishCross) shortReason += ' + EMA 9/21 Bearish Cross';
             if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
-            shortConfidence = hasBearishPattern ? 'HIGH' : 'MEDIUM';
+            shortConfidence = (hasBearishPattern || ema9BearishCross) ? 'HIGH' : 'MEDIUM';
         }
+    }
+
+    // RSI Divergence can trigger even without full trend alignment
+    if (!shortTriggered && bearishDivergence && sentimentGateShort && mode !== 'long_term') {
+        shortTriggered = true;
+        shortReason = 'Bearish RSI Divergence';
+        shortConfidence = 'MEDIUM';
     }
 
     if (shortTriggered) {

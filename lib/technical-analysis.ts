@@ -1,4 +1,4 @@
-import { SMA, RSI, MACD, EMA, BollingerBands, ATR } from 'technicalindicators';
+import { SMA, RSI, MACD, EMA, BollingerBands, ATR, StochasticRSI } from 'technicalindicators';
 
 export interface StockDataPoint {
     date: string;
@@ -27,6 +27,13 @@ export interface StockDataPoint {
     };
     atr?: number;
     volumeSma20?: number;
+    ema9?: number;
+    ema21?: number;
+    stochRsi?: {
+        stochRSI?: number;
+        k?: number;
+        d?: number;
+    };
 }
 
 // Input can be raw Yahoo Finance data which has Date objects
@@ -62,6 +69,19 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
 
     // Calculate ATR (14-period) for proper Stop Loss / Take Profit levels
     const atr14 = ATR.calculate({ period: 14, high: highs, low: lows, close: closes });
+
+    // Calculate EMA 9 & 21 for scalp mode crossovers
+    const ema9 = EMA.calculate({ period: 9, values: closes });
+    const ema21 = EMA.calculate({ period: 21, values: closes });
+
+    // Calculate Stochastic RSI
+    const stochRsi = StochasticRSI.calculate({
+        values: closes,
+        rsiPeriod: 14,
+        stochasticPeriod: 14,
+        kPeriod: 3,
+        dPeriod: 3,
+    });
 
     // Calculate Volume SMA (20-period) for volume confirmation
     const volumes = data.map((d) => d.volume || 0);
@@ -104,6 +124,9 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
             macd: getIndicatorValue(macd, data.length - macd.length),
             atr: getIndicatorValue(atr14, data.length - atr14.length),
             volumeSma20: getIndicatorValue(volumeSma20, data.length - volumeSma20.length),
+            ema9: getIndicatorValue(ema9, data.length - ema9.length),
+            ema21: getIndicatorValue(ema21, data.length - ema21.length),
+            stochRsi: getIndicatorValue(stochRsi, data.length - stochRsi.length),
         };
     });
 

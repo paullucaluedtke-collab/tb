@@ -47,7 +47,8 @@ export const useMarketData = (
     // State
     const [stockData, setStockData] = useState<StockData | null>(null);
     const [newsData, setNewsData] = useState<NewsResponse | null>(null);
-    const [summaries, setSummaries] = useState<Record<string, { price: number, change?: number, changePercent?: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
+    const [summaries, setSummaries] = useState<Record<string, { price: number, change?: number, changePercent?: number, fiftyTwoWeekHigh?: number, fiftyTwoWeekLow?: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
+    const [multiTimeframe, setMultiTimeframe] = useState<Record<string, TradeRecommendation> | null>(null);
     const [aiInsights, setAiInsights] = useState<Record<string, AIResult>>({});
     const [loading, setLoading] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
@@ -169,7 +170,6 @@ export const useMarketData = (
                         let hasChanges = false;
 
                         json.data.forEach((item: any) => {
-                            // Only update if price changed
                             if (next[item.symbol]?.price !== item.price) {
                                 hasChanges = true;
                                 next[item.symbol] = {
@@ -177,7 +177,8 @@ export const useMarketData = (
                                     price: item.price,
                                     change: item.change,
                                     changePercent: item.changePercent,
-                                    // Use minimal default if it doesn't exist yet, wait for deep analysis
+                                    fiftyTwoWeekHigh: item.fiftyTwoWeekHigh,
+                                    fiftyTwoWeekLow: item.fiftyTwoWeekLow,
                                     recommendation: next[item.symbol]?.recommendation || { action: 'WAIT', confidence: 'LOW', reason: 'Loading...' },
                                     sentiment: next[item.symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
                                 };
@@ -207,7 +208,26 @@ export const useMarketData = (
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [JSON.stringify(watchlist.map(a => a.symbol))]);
 
-    // 2a. MANUAL AI ANALYSIS: Triggered by user clicking the analyze button
+    // 2a. MULTI-TIMEFRAME: Fetch signals for all 3 modes at once
+    const fetchMultiTimeframe = async (symbol?: string) => {
+        const targetSymbol = symbol || selectedSymbol;
+        if (!targetSymbol) return;
+        try {
+            const modes = ['swing', 'scalp', 'long_term'] as const;
+            const results = await Promise.all(
+                modes.map(async (m) => {
+                    const res = await fetch(`/api/stock/${targetSymbol}?mode=${m}`);
+                    const data = await res.json();
+                    return { mode: m, recommendation: data.recommendation };
+                })
+            );
+            const tfMap: Record<string, TradeRecommendation> = {};
+            results.forEach(r => { tfMap[r.mode] = r.recommendation; });
+            setMultiTimeframe(tfMap);
+        } catch (e) { }
+    };
+
+    // 2b. MANUAL AI ANALYSIS: Triggered by user clicking the analyze button
     const triggerAiAnalysis = async (symbol?: string) => {
         const targetSymbol = symbol || selectedSymbol;
         if (!targetSymbol || !newsData?.news || newsData.news.length === 0) return;
@@ -323,5 +343,7 @@ export const useMarketData = (
         error,
         lastUpdated: stockData ? new Date() : null,
         triggerAiAnalysis,
+        multiTimeframe,
+        fetchMultiTimeframe,
     };
 };

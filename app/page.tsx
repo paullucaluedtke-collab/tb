@@ -7,11 +7,14 @@ import StockCard from '@/components/StockCard';
 import DeepAnalysisCard from '@/components/DeepAnalysisCard';
 import PositionCalculator from '@/components/PositionCalculator';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import AlertToastContainer from '@/components/AlertToast';
+import { useAlerts } from '@/hooks/useAlerts';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
-  Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers, LogOut
+  Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers, LogOut,
+  Bell, BellOff, BellRing, History, RotateCcw
 } from 'lucide-react';
 import { ASSETS, Asset } from '@/config/assets';
 
@@ -197,11 +200,18 @@ export default function Home() {
   // Use Custom Hook for Data Fetching
   const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated, triggerAiAnalysis, multiTimeframe, fetchMultiTimeframe } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
 
+  // Alerts + Follow system
+  const { followedSymbols, isFollowed, toggleFollow, toasts, dismissToast, alertHistory, clearHistory, notifPermission, requestPermission } = useAlerts(summaries);
+  const [showAlertHistory, setShowAlertHistory] = useState(false);
+
   // Dark Mode
   const [darkMode, setDarkMode] = useState(false);
 
   // Multi-Timeframe toggle
   const [showMultiTF, setShowMultiTF] = useState(false);
+
+  // Signal filter in sidebar (null = show all)
+  const [signalFilter, setSignalFilter] = useState<'LONG' | 'SHORT' | 'WAIT' | null>(null);
 
   // Hydration guard: only compute time-dependent values after mount to avoid SSR mismatch
   const [mounted, setMounted] = useState(false);
@@ -243,6 +253,13 @@ export default function Home() {
   useEffect(() => { localStorage.setItem('sb_lang', lang); }, [lang]);
   useEffect(() => { localStorage.setItem('sb_mode', mode); }, [mode]);
   useEffect(() => { localStorage.setItem('sb_sort', sortOption); }, [sortOption]);
+
+  // Auto-fetch multi-timeframe when switching symbols (if panel is open and no cached data)
+  useEffect(() => {
+    if (showMultiTF && !multiTimeframe) {
+      fetchMultiTimeframe();
+    }
+  }, [selectedSymbol, showMultiTF]);
 
   // 3. TRANSLATION EFFECT (Keep specific UI logic here)
   useEffect(() => {
@@ -305,7 +322,12 @@ export default function Home() {
       result = result.filter(a => a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
     }
 
-    // 3. Sort
+    // 3. Signal filter
+    if (signalFilter) {
+      result = result.filter(a => summaries[a.symbol]?.recommendation?.action === signalFilter);
+    }
+
+    // 4. Sort
     const sorted = [...result].sort((a, b) => { // Create copy
       const sumA = summaries[a.symbol];
       const sumB = summaries[b.symbol];
@@ -358,7 +380,7 @@ export default function Home() {
 
     // console.log("Filtered Assets:", sorted.length);
     return sorted;
-  }, [watchlist, activeCategory, searchQuery, sortOption, summaries, aiInsights]);
+  }, [watchlist, activeCategory, searchQuery, signalFilter, sortOption, summaries, aiInsights]);
 
   // KEYBOARD NAVIGATION: Arrow keys
   useEffect(() => {
@@ -506,6 +528,27 @@ export default function Home() {
             ))}
           </div>
 
+          {/* Signal Filter Pills */}
+          <div className="flex gap-1.5 mt-3 px-1">
+            {([null, 'LONG', 'SHORT', 'WAIT'] as const).map(sig => {
+              const active = signalFilter === sig;
+              const colors = sig === 'LONG' ? 'bg-green-500 text-white' : sig === 'SHORT' ? 'bg-red-500 text-white' : sig === 'WAIT' ? 'bg-gray-400 text-white' : '';
+              return (
+                <button
+                  key={sig ?? 'all'}
+                  onClick={() => setSignalFilter(sig)}
+                  className={`flex-1 py-1 text-[11px] font-bold rounded-lg transition-all border
+                    ${active
+                      ? (sig ? colors : 'bg-indigo-600 text-white border-indigo-600')
+                      : (darkMode ? 'border-gray-600 text-gray-400 hover:text-white' : 'border-gray-200 text-gray-500 hover:border-gray-300')
+                    }`}
+                >
+                  {sig ?? (lang === 'de' ? 'Alle' : 'All')}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Sort Controls */}
           <div className="flex justify-between items-center mt-2 px-1">
             <div className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -588,6 +631,21 @@ export default function Home() {
             <h2 className={`text-xl md:text-2xl font-black tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
               {selectedSymbol}
             </h2>
+            {/* Follow / Alert button */}
+            {selectedSymbol && (
+              <button
+                onClick={() => {
+                  if (notifPermission === 'default') requestPermission();
+                  toggleFollow(selectedSymbol);
+                }}
+                title={isFollowed(selectedSymbol) ? 'Stop following' : 'Follow — get notified when signal changes'}
+                className={`p-1.5 rounded-lg transition-all ${isFollowed(selectedSymbol)
+                  ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400'
+                  : (darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600')}`}
+              >
+                {isFollowed(selectedSymbol) ? <BellRing size={16} /> : <Bell size={16} />}
+              </button>
+            )}
             {stockData && (
               <div className="flex items-center gap-2">
                 <span className={`text-xl font-mono font-medium tracking-tight
@@ -607,7 +665,20 @@ export default function Home() {
               </div>
             )}
           </div>
-          <div>
+          <div className="flex items-center gap-2">
+            {/* Alert History Button */}
+            <button
+              onClick={() => setShowAlertHistory(v => !v)}
+              className={`relative p-1.5 rounded-lg transition-all ${darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+              title="Alert history"
+            >
+              <History size={16} />
+              {alertHistory.length > 0 && (
+                <span className="absolute -top-1 -right-1 bg-indigo-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  {alertHistory.length > 9 ? '9+' : alertHistory.length}
+                </span>
+              )}
+            </button>
             {mounted && lastUpdated && (
               <div className={`flex items-center gap-2 text-xs font-medium text-gray-400 px-3 py-1.5 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} />
@@ -616,6 +687,47 @@ export default function Home() {
             )}
           </div>
         </header>
+
+        {/* Alert History Panel */}
+        {showAlertHistory && (
+          <div className={`border-b px-6 py-4 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className={`text-sm font-bold ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
+                {lang === 'de' ? 'Signal-Verlauf' : 'Signal Alert History'}
+                <span className="ml-2 text-xs font-normal text-gray-400">({lang === 'de' ? 'verfolgte Assets' : 'followed assets'})</span>
+              </h3>
+              <div className="flex gap-2">
+                {alertHistory.length > 0 && (
+                  <button onClick={clearHistory} className="text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1">
+                    <RotateCcw size={11} /> {lang === 'de' ? 'Löschen' : 'Clear'}
+                  </button>
+                )}
+                <button onClick={() => setShowAlertHistory(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            {alertHistory.length === 0 ? (
+              <p className="text-sm text-gray-400 py-2">
+                {lang === 'de' ? 'Noch keine Signalwechsel. Klicke auf 🔔 um ein Asset zu verfolgen.' : 'No signal changes yet. Click 🔔 on any asset to follow it.'}
+              </p>
+            ) : (
+              <div className="flex gap-3 overflow-x-auto scrollbar-none pb-1">
+                {alertHistory.slice(0, 15).map(a => (
+                  <div key={a.id} className={`flex-shrink-0 rounded-xl px-3 py-2 border text-xs ${darkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-100'}`}>
+                    <span className="font-black text-gray-700 dark:text-gray-200">{a.symbol}</span>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-gray-400">{a.from}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className={`font-bold ${a.to === 'LONG' ? 'text-green-600' : a.to === 'SHORT' ? 'text-red-500' : 'text-gray-500'}`}>{a.to}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-400">{a.timestamp.toLocaleTimeString(locale)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Content Scroll View */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8">
@@ -766,12 +878,23 @@ export default function Home() {
                       {lang === 'de' ? 'Multi-Timeframe Signale' : 'Multi-Timeframe Signals'}
                     </h3>
                   </div>
-                  <button
-                    onClick={() => { setShowMultiTF(!showMultiTF); if (!multiTimeframe) fetchMultiTimeframe(); }}
-                    className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${showMultiTF ? 'bg-indigo-600 text-white border-indigo-600' : (darkMode ? 'border-gray-600 text-gray-400 hover:text-white' : 'border-gray-200 text-gray-500 hover:text-indigo-600')}`}
-                  >
-                    {showMultiTF ? (lang === 'de' ? 'Ausblenden' : 'Hide') : (lang === 'de' ? 'Anzeigen' : 'Show')}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {showMultiTF && (
+                      <button
+                        onClick={() => fetchMultiTimeframe()}
+                        className={`p-1.5 rounded-lg transition-all ${darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                        title="Refresh"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => { setShowMultiTF(v => !v); if (!multiTimeframe) fetchMultiTimeframe(); }}
+                      className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${showMultiTF ? 'bg-indigo-600 text-white border-indigo-600' : (darkMode ? 'border-gray-600 text-gray-400 hover:text-white' : 'border-gray-200 text-gray-500 hover:text-indigo-600')}`}
+                    >
+                      {showMultiTF ? (lang === 'de' ? 'Ausblenden' : 'Hide') : (lang === 'de' ? 'Anzeigen' : 'Show')}
+                    </button>
+                  </div>
                 </div>
                 {showMultiTF && multiTimeframe && (
                   <div className="grid grid-cols-3 gap-3">
@@ -835,6 +958,9 @@ export default function Home() {
           )}
         </div>
       </main>
+
+      {/* Alert Toasts — fixed bottom-right */}
+      <AlertToastContainer alerts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

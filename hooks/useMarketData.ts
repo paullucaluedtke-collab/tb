@@ -48,7 +48,8 @@ export const useMarketData = (
     const [stockData, setStockData] = useState<StockData | null>(null);
     const [newsData, setNewsData] = useState<NewsResponse | null>(null);
     const [summaries, setSummaries] = useState<Record<string, { price: number, change?: number, changePercent?: number, fiftyTwoWeekHigh?: number, fiftyTwoWeekLow?: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
-    const [multiTimeframe, setMultiTimeframe] = useState<Record<string, TradeRecommendation> | null>(null);
+    // Keyed by symbol so switching assets never shows stale data from a different symbol
+    const [multiTimeframeMap, setMultiTimeframeMap] = useState<Record<string, Record<string, TradeRecommendation>>>({});
     const [aiInsights, setAiInsights] = useState<Record<string, AIResult>>({});
     const [loading, setLoading] = useState(false);
     const [aiLoading, setAiLoading] = useState(false);
@@ -225,7 +226,7 @@ export const useMarketData = (
         };
     }, [watchlistKey]);
 
-    // 2a. MULTI-TIMEFRAME: Fetch signals for all 3 modes at once
+    // 2a. MULTI-TIMEFRAME: per-symbol cache — switching stocks never shows wrong data
     const fetchMultiTimeframe = async (symbol?: string) => {
         const targetSymbol = symbol || selectedSymbol;
         if (!targetSymbol) return;
@@ -239,10 +240,13 @@ export const useMarketData = (
                 })
             );
             const tfMap: Record<string, TradeRecommendation> = {};
-            results.forEach(r => { tfMap[r.mode] = r.recommendation; });
-            setMultiTimeframe(tfMap);
+            results.forEach(r => { if (r.recommendation) tfMap[r.mode] = r.recommendation; });
+            setMultiTimeframeMap(prev => ({ ...prev, [targetSymbol]: tfMap }));
         } catch (e) { }
     };
+
+    // Expose per-symbol multi-timeframe for current selected symbol
+    const multiTimeframe = multiTimeframeMap[selectedSymbol] ?? null;
 
     // 2b. MANUAL AI ANALYSIS: Triggered by user clicking the analyze button
     const triggerAiAnalysis = async (symbol?: string) => {

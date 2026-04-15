@@ -3,10 +3,10 @@ import YahooFinance from 'yahoo-finance2';
 import { LRUCache } from 'lru-cache';
 const yahooFinance = new YahooFinance();
 
-// Global cache for batch route
+// Global cache for batch route - longer TTL now that frontend polls at 10s
 const batchCache = new LRUCache<string, any>({
     max: 50,
-    ttl: 3000, // 3 seconds TTL
+    ttl: 15_000, // 15 seconds TTL
 });
 
 export async function POST(request: Request) {

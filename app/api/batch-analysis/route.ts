@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
 import YahooFinance from 'yahoo-finance2';
+import { LRUCache } from 'lru-cache';
 const yahooFinance = new YahooFinance();
 import { calculateIndicators } from '@/lib/technical-analysis';
 import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
+
+// Per-symbol analysis cache - heavy work (chart fetch + indicators) should not run per user per minute
+const analysisCache = new LRUCache<string, any>({
+    max: 500,
+    ttl: 5 * 60 * 1000, // 5 minutes
+});
 
 export async function POST(request: Request) {
     try {
@@ -19,15 +26,27 @@ export async function POST(request: Request) {
         const chunkSize = 10;
         const results: Record<string, any> = {};
 
-        for (let i = 0; i < symbols.length; i += chunkSize) {
-            const chunk = symbols.slice(i, i + chunkSize);
+        // Pre-populate from cache; only fetch cache misses
+        const missing: string[] = [];
+        for (const sym of symbols) {
+            const cached = analysisCache.get(`${sym}-${activeMode}`);
+            if (cached) {
+                results[sym] = cached;
+            } else {
+                missing.push(sym);
+            }
+        }
+
+        // Dynamic start date keeps payload small while having enough for SMA200
+        const dynamicStart = new Date(Date.now() - 300 * 24 * 60 * 60 * 1000)
+            .toISOString().split('T')[0];
+
+        for (let i = 0; i < missing.length; i += chunkSize) {
+            const chunk = missing.slice(i, i + chunkSize);
 
             await Promise.all(chunk.map(async (symbol: string) => {
                 try {
-                    // Fetch enough data for SMA200 (approx 300 days to be safe, but keep payload small)
-                    // We need ~200 data points. 1y is safe.
-                    const queryOptions = { period1: '2023-01-01', interval: '1d' as const };
-                    // Optimization: We could calculate a dynamic start date (Today - 300 days)
+                    const queryOptions = { period1: dynamicStart, interval: '1d' as const };
 
                     const chartResult = await yahooFinance.chart(symbol, queryOptions);
                     const quotes = chartResult?.quotes?.filter((q: any) => q.close !== null && q.date !== null);
@@ -38,24 +57,20 @@ export async function POST(request: Request) {
                     }
 
                     const enrichedData = calculateIndicators(quotes);
-
-                    // We do NOT fetch news here to keep it fast.
-                    // Batch sentiment is too heavy.
-                    // We assume Neutral sentiment for batch sorting unless previously fetched.
                     const recommendation = getTradeSignal(enrichedData, activeMode, 'Neutral');
 
-                    results[symbol] = {
+                    const entry = {
                         recommendation,
                         latestClose: quotes[quotes.length - 1].close
                     };
+                    analysisCache.set(`${symbol}-${activeMode}`, entry);
+                    results[symbol] = entry;
 
                 } catch (e) {
                     console.error(`Failed to analyze ${symbol}`, e);
                     results[symbol] = { error: 'Analysis failed' };
                 }
             }));
-
-            // Optional: small delay between chunks if needed (not usually for 50 items)
         }
 
         return NextResponse.json({ data: results });

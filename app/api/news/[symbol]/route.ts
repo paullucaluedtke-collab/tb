@@ -7,10 +7,10 @@ import { analyzeSentiment } from '@/lib/analysis';
 
 import { ASSETS } from '@/config/assets';
 
-// Cache news heavily because it doesn't change every second
+// News rarely changes - aggressive cache saves Yahoo search calls (very expensive)
 const newsCache = new LRUCache<string, any>({
-    max: 100,
-    ttl: 60000, // 60 seconds TTL for news
+    max: 200,
+    ttl: 5 * 60 * 1000, // 5 minutes
 });
 
 const TRUSTED_PUBLISHERS = [

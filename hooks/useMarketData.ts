@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Asset } from '@/config/assets';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import { StockDataPoint } from '@/lib/technical-analysis';
@@ -63,7 +63,7 @@ export const useMarketData = (
         selectedSymbolRef.current = selectedSymbol;
     }, [selectedSymbol]);
 
-    // 1. ACTIVE ASSET LOOP: Fast Price (1s), Slow News (30s)
+    // 1. ACTIVE ASSET LOOP: Price (5s, visibility-aware), News (60s)
     useEffect(() => {
         if (!selectedSymbol) return;
 
@@ -80,9 +80,16 @@ export const useMarketData = (
                 // Cache stock data
                 cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], stock: data };
 
-                // Only update if price/data actually changed to prevent jitter
+                // Cheap change detection: compare only the latest candle timestamp + close
                 setStockData(prev => {
-                    if (prev && JSON.stringify(prev.data) === JSON.stringify(data.data)) return prev;
+                    if (!prev || !data?.data?.length) return data;
+                    const prevLast = prev.data[prev.data.length - 1];
+                    const newLast = data.data[data.data.length - 1];
+                    if (prevLast?.date === newLast?.date &&
+                        prevLast?.close === newLast?.close &&
+                        prev.data.length === data.data.length) {
+                        return prev;
+                    }
                     return data;
                 });
             } catch (e) { }
@@ -94,14 +101,11 @@ export const useMarketData = (
                 const data = await res.json();
                 if (!isMounted) return;
 
-                // Cache news data
                 cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], news: data };
 
-                // Only update if news ID/hashes changed to prevent AI reset
                 setNewsData(prev => {
                     const prevHash = prev?.news?.map((n: any) => n.uuid).join('|');
                     const newHash = data?.news?.map((n: any) => n.uuid).join('|');
-                    // Also check sentiment score to ensure we don't miss updates there
                     if (prevHash === newHash && prev?.sentiment?.score === data?.sentiment?.score) return prev;
                     return data;
                 });
@@ -112,29 +116,29 @@ export const useMarketData = (
         const initialLoad = async () => {
             const cached = cacheRef.current[selectedSymbol];
             if (cached?.stock && cached?.news) {
-                // Use cache
                 setStockData(cached.stock);
                 setNewsData(cached.news);
                 setLoading(false);
             } else {
-                // Clear state to show loading spinner for new asset
                 setStockData(null);
                 setNewsData(null);
                 setLoading(true);
             }
 
-            // Always fetch fresh data anyway
             await Promise.all([fetchPrice(), fetchNews()]);
             if (isMounted) setLoading(false);
         };
 
         initialLoad();
 
-        // Fast Loop: Price (1s)
-        priceInterval = setInterval(fetchPrice, 1000);
+        // Slower polling + visibility check to drastically reduce Vercel serverless load
+        priceInterval = setInterval(() => {
+            if (!document.hidden) fetchPrice();
+        }, 5000); // 5s (was 1s -> 80% fewer requests)
 
-        // Slow Loop: News (60s) for active symbol
-        newsInterval = setInterval(fetchNews, 60000);
+        newsInterval = setInterval(() => {
+            if (!document.hidden) fetchNews();
+        }, 120000); // 2 min (was 60s)
 
         return () => {
             isMounted = false;
@@ -147,10 +151,16 @@ export const useMarketData = (
     // DEBUG: Track renders
     // console.log("useMarketData Render", selectedSymbol);
 
-    // 2. BACKGROUND LOOP: Batch Watchlist Updates (Global Fast - 2.0s)
+    // Stable key for watchlist - avoid JSON.stringify on every render
+    const watchlistKey = useMemo(
+        () => watchlist.map(a => a.symbol).join(','),
+        [watchlist]
+    );
+
+    // 2. BACKGROUND LOOP: Batch Watchlist Updates (every 10s, visibility-aware)
     useEffect(() => {
         let isMounted = true;
-        const symbolList = watchlist.map(a => a.symbol);
+        const symbolList = watchlistKey ? watchlistKey.split(',') : [];
 
         const fetchBatchPrices = async () => {
             if (symbolList.length === 0) return;
@@ -187,26 +197,23 @@ export const useMarketData = (
                         return hasChanges ? next : prev;
                     });
                 }
-            } catch (e) {
-                // console.warn("Batch fetch fail", e);
-            }
+            } catch (e) { }
         };
 
         fetchBatchPrices(); // Initial fetch
 
-        // 2s Fast Loop for Watchlist Prices
+        // 10s loop for watchlist prices (was 2s -> 80% fewer requests)
         const interval = setInterval(() => {
             if (!document.hidden) {
                 fetchBatchPrices();
             }
-        }, 2000);
+        }, 10000);
 
         return () => {
             isMounted = false;
             clearInterval(interval);
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [JSON.stringify(watchlist.map(a => a.symbol))]);
+    }, [watchlistKey]);
 
     // 2a. MULTI-TIMEFRAME: Fetch signals for all 3 modes at once
     const fetchMultiTimeframe = async (symbol?: string) => {
@@ -325,13 +332,17 @@ export const useMarketData = (
         };
 
         fetchDeepAnalysis();
-        const interval = setInterval(fetchDeepAnalysis, 60000); // 60s background full sync
+        // Deep analysis is very heavy (chart + indicators for every watchlist symbol + news loop).
+        // Run only every 5 minutes and skip when the tab is hidden.
+        const interval = setInterval(() => {
+            if (!document.hidden) fetchDeepAnalysis();
+        }, 5 * 60 * 1000);
 
         return () => {
             isMounted = false;
             clearInterval(interval);
         };
-    }, [watchlist, mode, activeCategory]);
+    }, [watchlistKey, mode, activeCategory]);
 
     return {
         stockData,

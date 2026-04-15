@@ -6,10 +6,22 @@ import { calculateIndicators } from '@/lib/technical-analysis';
 import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
 
 // Global cache for API route (persists across hot reloads in dev, lives in memory in prod)
-// We use a short TTL (e.g., 5 seconds) to allow "fast" polling while protecting against 1000s of requests per minute
+// Larger TTL drastically reduces Yahoo Finance calls and serverless cold-start pressure.
 const globalCache = new LRUCache<string, any>({
-    max: 100, // Max 100 symbols
-    ttl: 3000, // 3 seconds TTL for price data
+    max: 200, // Max 200 symbol+mode combos
+    ttl: 30_000, // 30 seconds TTL for enriched chart data (frontend polls at 5s now)
+});
+
+// Separate cache for quoteSummary (profile) data - changes very rarely
+const profileCache = new LRUCache<string, any>({
+    max: 200,
+    ttl: 6 * 60 * 60 * 1000, // 6 hours (profile rarely changes)
+});
+
+// Cache for headlines-based sentiment (changes slowly)
+const sentimentCache = new LRUCache<string, 'Bullish' | 'Bearish' | 'Neutral'>({
+    max: 200,
+    ttl: 5 * 60 * 1000, // 5 minutes
 });
 
 export async function GET(
@@ -35,31 +47,32 @@ export async function GET(
         // Fetch Chart Data (Critical)
         const chartResult = await yahooFinance.chart(symbol, queryOptions);
 
-        // Fetch News (for Sentiment Gate)
-        let sentimentLabel: 'Bullish' | 'Bearish' | 'Neutral' = 'Neutral';
-        try {
-            const news = await yahooFinance.search(symbol, { newsCount: 5 });
-            // Simple local sentiment analysis 
-            // We need to import analyzeSentiment. 
-            // NOTE: To avoid circular deps or code duplication, strictly we should use the lib function.
-            // But we need to make sure we have the headlines.
-            if (news.news && news.news.length > 0) {
-                // @ts-ignore
-                const headlines = news.news.map((n: any) => n.title);
-                // Used imported function
-                const sentimentResult = analyzeSentiment(headlines);
-                sentimentLabel = sentimentResult.label;
+        // Sentiment (cached 5min) - avoid hitting Yahoo search every call
+        let sentimentLabel: 'Bullish' | 'Bearish' | 'Neutral' = sentimentCache.get(symbol) || 'Neutral';
+        if (!sentimentCache.has(symbol)) {
+            try {
+                const news = await yahooFinance.search(symbol, { newsCount: 5 });
+                if (news.news && news.news.length > 0) {
+                    // @ts-ignore
+                    const headlines = news.news.map((n: any) => n.title);
+                    sentimentLabel = analyzeSentiment(headlines).label;
+                }
+                sentimentCache.set(symbol, sentimentLabel);
+            } catch (e) {
+                sentimentCache.set(symbol, 'Neutral');
             }
-        } catch (e) {
-            console.warn('Sentiment fetch failed inside stock route', e);
         }
 
-        // Fetch Profile Data (Optional) - indices often fail here
-        let quoteSummary: any = {};
-        try {
-            quoteSummary = await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile', 'assetProfile'] });
-        } catch (e) {
-            console.warn(`Profile data not found for ${symbol}:`, e);
+        // Profile Data (cached 6h) - changes very rarely
+        let quoteSummary: any = profileCache.get(symbol);
+        if (!quoteSummary) {
+            try {
+                quoteSummary = await yahooFinance.quoteSummary(symbol, { modules: ['summaryProfile', 'assetProfile'] });
+                profileCache.set(symbol, quoteSummary);
+            } catch (e) {
+                profileCache.set(symbol, {}); // cache miss too, to avoid retrying indices every time
+                quoteSummary = {};
+            }
         }
 
         const quotes = chartResult?.quotes?.filter((q: any) => q.close !== null && q.date !== null);

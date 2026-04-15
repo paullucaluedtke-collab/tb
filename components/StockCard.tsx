@@ -137,7 +137,7 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
             </div>
 
             {/* 52-Week Range Bar */}
-            {fiftyTwoWeekHigh && fiftyTwoWeekLow && data?.close && (
+            {fiftyTwoWeekHigh && fiftyTwoWeekLow && data?.close && fiftyTwoWeekHigh > fiftyTwoWeekLow && (
                 <div className="mt-3">
                     <div className="flex justify-between text-[10px] text-gray-400 dark:text-gray-500 mb-0.5">
                         <span>{formatPrice(fiftyTwoWeekLow)}</span>

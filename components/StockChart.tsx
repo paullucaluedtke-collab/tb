@@ -23,6 +23,15 @@ interface StockChartProps {
 }
 
 const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
+    // Defensive: never crash on missing/malformed data
+    if (!Array.isArray(data) || data.length === 0) {
+        return (
+            <div className="h-72 md:h-96 w-full flex items-center justify-center text-gray-400 text-sm">
+                No chart data available.
+            </div>
+        );
+    }
+
     const recentData = data.slice(-100);
 
     const chartData = recentData.map(d => ({

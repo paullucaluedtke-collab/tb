@@ -6,6 +6,7 @@ import NewsFeed from '@/components/NewsFeed';
 import StockCard from '@/components/StockCard';
 import DeepAnalysisCard from '@/components/DeepAnalysisCard';
 import PositionCalculator from '@/components/PositionCalculator';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import {
@@ -201,6 +202,17 @@ export default function Home() {
 
   // Multi-Timeframe toggle
   const [showMultiTF, setShowMultiTF] = useState(false);
+
+  // Hydration guard: only compute time-dependent values after mount to avoid SSR mismatch
+  const [mounted, setMounted] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+    setMarketOpen(isMarketOpen());
+    // Re-check market status every minute
+    const id = setInterval(() => setMarketOpen(isMarketOpen()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
@@ -547,7 +559,7 @@ export default function Home() {
 
         {/* Status Footer */}
         <div className={`p-4 border-t text-xs text-gray-400 flex justify-between ${darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
-          <span>{t.marketStatus}: <span className={`font-bold ${isMarketOpen() ? 'text-green-600' : 'text-red-500'}`}>{isMarketOpen() ? t.open : t.closed}</span></span>
+          <span>{t.marketStatus}: <span className={`font-bold ${marketOpen ? 'text-green-600' : 'text-red-500'}`}>{mounted ? (marketOpen ? t.open : t.closed) : '—'}</span></span>
           <span>v3.0 {t.pro}</span>
         </div>
       </aside>
@@ -587,7 +599,7 @@ export default function Home() {
             )}
           </div>
           <div>
-            {lastUpdated && (
+            {mounted && lastUpdated && (
               <div className={`flex items-center gap-2 text-xs font-medium text-gray-400 px-3 py-1.5 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
                 <RefreshCw size={12} className={dataLoading ? 'animate-spin' : ''} />
                 {t.updated} {lastUpdated.toLocaleTimeString(locale)}
@@ -603,7 +615,8 @@ export default function Home() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
               <p>{t.analyzing} {selectedSymbol}...</p>
             </div>
-          ) : selectedSymbol && stockData ? (
+          ) : selectedSymbol && stockData && stockData.latest && stockData.recommendation && Array.isArray(stockData.data) && stockData.data.length > 0 ? (
+            <ErrorBoundary>
             <div className="max-w-6xl mx-auto space-y-6">
 
               {/* Analysis Grid */}
@@ -846,6 +859,7 @@ export default function Home() {
               </div>
 
             </div>
+            </ErrorBoundary>
           ) : (
             <div className="h-full flex items-center justify-center text-gray-400 text-lg">
               {t.selectAsset}

@@ -5,11 +5,11 @@ const yahooFinance = new YahooFinance();
 import { calculateIndicators } from '@/lib/technical-analysis';
 import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
 
-// Global cache for API route (persists across hot reloads in dev, lives in memory in prod)
-// Larger TTL drastically reduces Yahoo Finance calls and serverless cold-start pressure.
+// Global cache for API route. Frontend polls active asset at 2s — 5s TTL means
+// ~60% cache hits while keeping data fresh for real-time feel.
 const globalCache = new LRUCache<string, any>({
-    max: 200, // Max 200 symbol+mode combos
-    ttl: 30_000, // 30 seconds TTL for enriched chart data (frontend polls at 5s now)
+    max: 200,
+    ttl: 5_000,
 });
 
 // Separate cache for quoteSummary (profile) data - changes very rarely

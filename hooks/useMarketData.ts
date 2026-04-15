@@ -77,12 +77,17 @@ export const useMarketData = (
                 const data = await res.json();
                 if (!isMounted) return;
 
-                // Cache stock data
+                // GUARD: ignore error responses & malformed payloads - never replace good data with bad
+                if (!res.ok || data?.error || !Array.isArray(data?.data) || data.data.length === 0 || !data?.latest || !data?.recommendation) {
+                    return;
+                }
+
+                // Cache only valid stock data
                 cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], stock: data };
 
                 // Cheap change detection: compare only the latest candle timestamp + close
                 setStockData(prev => {
-                    if (!prev || !data?.data?.length) return data;
+                    if (!prev) return data;
                     const prevLast = prev.data[prev.data.length - 1];
                     const newLast = data.data[data.data.length - 1];
                     if (prevLast?.date === newLast?.date &&
@@ -100,6 +105,11 @@ export const useMarketData = (
                 const res = await fetch(`/api/news/${selectedSymbol}`);
                 const data = await res.json();
                 if (!isMounted) return;
+
+                // GUARD: ignore error responses / malformed payloads
+                if (!res.ok || data?.error || !Array.isArray(data?.news) || !data?.sentiment) {
+                    return;
+                }
 
                 cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], news: data };
 
@@ -131,14 +141,14 @@ export const useMarketData = (
 
         initialLoad();
 
-        // Slower polling + visibility check to drastically reduce Vercel serverless load
+        // Fast refresh (2s) for active asset, but visibility-gated + server-cached
         priceInterval = setInterval(() => {
             if (!document.hidden) fetchPrice();
-        }, 5000); // 5s (was 1s -> 80% fewer requests)
+        }, 2000);
 
         newsInterval = setInterval(() => {
             if (!document.hidden) fetchNews();
-        }, 120000); // 2 min (was 60s)
+        }, 60000); // 1 min news refresh
 
         return () => {
             isMounted = false;
@@ -202,12 +212,12 @@ export const useMarketData = (
 
         fetchBatchPrices(); // Initial fetch
 
-        // 10s loop for watchlist prices (was 2s -> 80% fewer requests)
+        // Fast watchlist refresh (5s) - visibility-gated + server-cached (15s TTL)
         const interval = setInterval(() => {
             if (!document.hidden) {
                 fetchBatchPrices();
             }
-        }, 10000);
+        }, 5000);
 
         return () => {
             isMounted = false;
@@ -332,11 +342,10 @@ export const useMarketData = (
         };
 
         fetchDeepAnalysis();
-        // Deep analysis is very heavy (chart + indicators for every watchlist symbol + news loop).
-        // Run only every 5 minutes and skip when the tab is hidden.
+        // Deep analysis is heavy but cached server-side (5min LRU) - keep 90s refresh for fresh signals
         const interval = setInterval(() => {
             if (!document.hidden) fetchDeepAnalysis();
-        }, 5 * 60 * 1000);
+        }, 90_000);
 
         return () => {
             isMounted = false;

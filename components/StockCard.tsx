@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { ArrowUp, ArrowDown, ArrowRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 
@@ -60,17 +60,6 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
         RecIcon = TrendingDown;
     }
 
-    // Determine Sentiment Icon
-    let SentimentIcon = ArrowRight;
-    let sentColor = 'text-gray-400';
-    if (sentiment?.label === 'Bullish') {
-        SentimentIcon = ArrowUp;
-        sentColor = 'text-green-500';
-    } else if (sentiment?.label === 'Bearish') {
-        SentimentIcon = ArrowDown;
-        sentColor = 'text-red-500';
-    }
-
     const locale = lang === 'de' ? 'de-DE' : 'en-US';
     const currency = getCurrencyForSymbol(symbol);
 
@@ -126,14 +115,6 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
                     )}
                 </div>
 
-                {/* Sentiment Indicator (Right Top) */}
-                {sentiment && (
-                    <div className="flex flex-col items-end">
-                        <div className={`p-1.5 rounded-full ${sentiment.label === 'Bullish' ? 'bg-green-50' : sentiment.label === 'Bearish' ? 'bg-red-50' : 'bg-gray-50'}`}>
-                            <SentimentIcon size={16} className={sentColor} strokeWidth={2.5} />
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* 52-Week Range Bar */}

@@ -11,7 +11,7 @@ import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
-  Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers
+  Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers, LogOut
 } from 'lucide-react';
 import { ASSETS, Asset } from '@/config/assets';
 
@@ -558,9 +558,18 @@ export default function Home() {
         </div>
 
         {/* Status Footer */}
-        <div className={`p-4 border-t text-xs text-gray-400 flex justify-between ${darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
+        <div className={`p-4 border-t text-xs text-gray-400 flex justify-between items-center ${darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
           <span>{t.marketStatus}: <span className={`font-bold ${marketOpen ? 'text-green-600' : 'text-red-500'}`}>{mounted ? (marketOpen ? t.open : t.closed) : '—'}</span></span>
-          <span>v3.0 {t.pro}</span>
+          <div className="flex items-center gap-3">
+            <span>v3.0 {t.pro}</span>
+            <button
+              onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login'; }}
+              className="text-gray-400 hover:text-red-500 transition-colors"
+              title="Logout"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -619,50 +628,51 @@ export default function Home() {
             <ErrorBoundary>
             <div className="max-w-6xl mx-auto space-y-6">
 
-              {/* Analysis Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-                {/* 1. Technical Signal Card */}
-                <div className={`rounded-3xl p-5 md:p-8 shadow-sm border flex flex-col justify-between ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                  <div className="flex flex-col sm:flex-row justify-between items-start gap-3 sm:gap-0 mb-4">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t.technicalSignal}</h3>
-                      <h4 className={`text-3xl font-black mt-1
-                                         ${stockData.recommendation.action === 'LONG' ? 'text-green-600' :
-                          stockData.recommendation.action === 'SHORT' ? 'text-red-600' : 'text-gray-600'}
-                                     `}>
-                        {t.signal[stockData.recommendation.action as keyof typeof t.signal] || stockData.recommendation.action}
-                      </h4>
-                    </div>
-                    <span className={`px-4 py-1.5 rounded-full text-xs font-bold border
-                                     ${stockData.recommendation.confidence === 'HIGH' ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-gray-50 border-gray-100 text-gray-500'}
-                                 `}>
-                      {stockData.recommendation.confidence} {t.confidence}
-                    </span>
+              {/* Technical Signal Card — full width */}
+              <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-3 sm:gap-0 mb-5">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">{t.technicalSignal}</h3>
+                    <h4 className={`text-4xl font-black mt-1
+                                       ${stockData.recommendation.action === 'LONG' ? 'text-green-600' :
+                        stockData.recommendation.action === 'SHORT' ? 'text-red-600' : 'text-gray-500'}
+                                   `}>
+                      {t.signal[stockData.recommendation.action as keyof typeof t.signal] || stockData.recommendation.action}
+                    </h4>
                   </div>
+                  <span className={`px-4 py-1.5 rounded-full text-xs font-bold border
+                                   ${stockData.recommendation.confidence === 'HIGH'
+                      ? 'bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400'
+                      : (darkMode ? 'bg-gray-700 border-gray-600 text-gray-400' : 'bg-gray-50 border-gray-100 text-gray-500')}
+                               `}>
+                    {stockData.recommendation.confidence} {t.confidence}
+                  </span>
+                </div>
 
-                  <p className={`font-medium leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                    {stockData.recommendation.reason}.
-                  </p>
+                <p className={`font-medium leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {stockData.recommendation.reason}.
+                </p>
 
-                  {/* Trading Plan (SL / TP / R:R) */}
-                  {(stockData.recommendation.stopLoss && stockData.recommendation.takeProfit) && (
-                    <div className="mt-6 grid grid-cols-3 gap-4">
-                      <div className="p-3 bg-red-50 rounded-xl border border-red-100 flex flex-col">
+                {/* Trading Plan + Patterns in a row */}
+                <div className="mt-6 flex flex-col lg:flex-row gap-6">
+                  {/* SL / TP / R:R */}
+                  {stockData.recommendation.stopLoss && stockData.recommendation.takeProfit && (
+                    <div className="grid grid-cols-3 gap-3 flex-1">
+                      <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-red-900/20 border-red-900/40' : 'bg-red-50 border-red-100'}`}>
                         <span className="text-xs font-bold text-red-400 uppercase tracking-wide mb-1">{t.stopLoss}</span>
-                        <span className="text-lg font-bold text-red-700">
+                        <span className={`text-base font-bold ${darkMode ? 'text-red-400' : 'text-red-700'}`}>
                           {formatPrice(stockData.recommendation.stopLoss, selectedSymbol, locale)}
                         </span>
                       </div>
-                      <div className="p-3 bg-green-50 rounded-xl border border-green-100 flex flex-col">
+                      <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-green-900/20 border-green-900/40' : 'bg-green-50 border-green-100'}`}>
                         <span className="text-xs font-bold text-green-400 uppercase tracking-wide mb-1">{t.takeProfit}</span>
-                        <span className="text-lg font-bold text-green-700">
+                        <span className={`text-base font-bold ${darkMode ? 'text-green-400' : 'text-green-700'}`}>
                           {formatPrice(stockData.recommendation.takeProfit, selectedSymbol, locale)}
                         </span>
                       </div>
-                      <div className="p-3 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col">
+                      <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-indigo-900/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
                         <span className="text-xs font-bold text-indigo-400 uppercase tracking-wide mb-1">Risk:Reward</span>
-                        <span className="text-lg font-bold text-indigo-700">
+                        <span className={`text-base font-bold ${darkMode ? 'text-indigo-400' : 'text-indigo-700'}`}>
                           {getRiskRewardRatio(stockData.latest.close, stockData.recommendation.stopLoss, stockData.recommendation.takeProfit)}
                         </span>
                       </div>
@@ -671,16 +681,16 @@ export default function Home() {
 
                   {/* AI Pattern Chips */}
                   {stockData.recommendation.patterns && stockData.recommendation.patterns.length > 0 && (
-                    <div className="mt-6 pt-6 border-t border-gray-100">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="p-1 bg-purple-100 rounded-lg text-purple-600">
-                          <Smartphone size={14} />
+                    <div className={`pt-4 lg:pt-0 lg:pl-6 lg:border-l flex-shrink-0 ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="p-1 bg-purple-100 dark:bg-purple-900/30 rounded-lg text-purple-600">
+                          <Smartphone size={13} />
                         </div>
-                        <span className="text-xs font-bold text-purple-700 uppercase">AI Pattern Recognition</span>
+                        <span className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase">Pattern</span>
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {stockData.recommendation.patterns.map(p => (
-                          <span key={p} className="px-3 py-1.5 bg-purple-50 text-purple-700 border border-purple-100 rounded-lg text-xs font-bold shadow-sm">
+                          <span key={p} className="px-2.5 py-1 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-400 border border-purple-100 dark:border-purple-900/40 rounded-lg text-xs font-bold">
                             {p}
                           </span>
                         ))}
@@ -688,47 +698,17 @@ export default function Home() {
                     </div>
                   )}
                 </div>
-
-                {/* 2. Sentiment Card */}
-                <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">{t.marketHype}</h3>
-
-                  {newsData?.sentiment ? (
-                    <div>
-                      <div className="flex items-end gap-3 mb-6">
-                        <span className={`text-4xl font-black
-                                            ${newsData.sentiment.label === 'Bullish' ? 'text-green-600' :
-                            newsData.sentiment.label === 'Bearish' ? 'text-red-600' : 'text-gray-600'}
-                                         `}>
-                          {t.sentiment[newsData.sentiment.label as keyof typeof t.sentiment] || newsData.sentiment.label}
-                        </span>
-                        <span className="text-sm font-medium text-gray-400 mb-2">
-                          {t.force}: {newsData.sentiment.score > 0 ? '+' : ''}{newsData.sentiment.score.toFixed(2)}
-                        </span>
-                      </div>
-
-                      {/* Custom Progress Bar */}
-                      <div className="h-4 bg-gray-100 rounded-full w-full overflow-hidden relative mb-4">
-                        <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-gray-400 z-10"></div>
-                        <div
-                          className={`absolute top-0 bottom-0 transition-all duration-500 rounded-full
-                                                ${newsData.sentiment.score > 0 ? 'bg-gradient-to-r from-green-300 to-green-500' : 'bg-gradient-to-r from-red-500 to-red-300'}
-                                            `}
-                          style={{
-                            left: newsData.sentiment.score < 0 ? `${50 + (newsData.sentiment.score / 3) * 50}%` : '50%',
-                            width: `${Math.abs(newsData.sentiment.score / 3) * 50}%`
-                          }}
-                        />
-                      </div>
-                      <p className="text-sm text-gray-500 italic">
-                        "{newsData.sentiment.summary}"
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-gray-400">{t.noData}</p>
-                  )}
-                </div>
               </div>
+
+              {/* AI Deep Analysis — directly below signal, prominent position */}
+              <DeepAnalysisCard
+                symbol={selectedSymbol}
+                lang={lang}
+                result={aiInsights[selectedSymbol] || null}
+                loading={aiLoading}
+                onAnalyze={() => triggerAiAnalysis()}
+                hasNews={!!newsData?.news && newsData.news.length > 0}
+              />
 
               {/* About Section */}
               {stockData.profile && (
@@ -834,18 +814,6 @@ export default function Home() {
                 lang={lang}
                 formatPrice={(p: number) => formatPrice(p, selectedSymbol, locale)}
               />
-
-              {/* Deep Analysis Section */}
-              <div className="mb-8">
-                <DeepAnalysisCard
-                  symbol={selectedSymbol}
-                  lang={lang}
-                  result={aiInsights[selectedSymbol] || null}
-                  loading={aiLoading}
-                  onAnalyze={() => triggerAiAnalysis()}
-                  hasNews={!!newsData?.news && newsData.news.length > 0}
-                />
-              </div>
 
               {/* News Section */}
               <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>

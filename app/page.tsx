@@ -15,6 +15,7 @@ import { useAlerts } from '@/hooks/useAlerts';
 import { useSignalHistory } from '@/hooks/useSignalHistory';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
+import { getMarketStatus } from '@/lib/marketHours';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import {
@@ -157,17 +158,6 @@ const formatPrice = (price: number, symbol: string, locale: string): string => {
   return price.toLocaleString(locale, { style: 'currency', currency });
 };
 
-// Helper: Detect if market is currently open (US Eastern Time)
-const isMarketOpen = (): boolean => {
-  const now = new Date();
-  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-  const day = et.getDay(); // 0=Sun, 6=Sat
-  if (day === 0 || day === 6) return false;
-  const hours = et.getHours();
-  const minutes = et.getMinutes();
-  const timeInMinutes = hours * 60 + minutes;
-  return timeInMinutes >= 570 && timeInMinutes < 960; // 9:30 AM - 4:00 PM ET
-};
 
 // Helper: Calculate Risk/Reward ratio
 const getRiskRewardRatio = (price: number, stopLoss: number, takeProfit: number): string => {
@@ -232,14 +222,21 @@ export default function Home() {
 
   // Hydration guard: only compute time-dependent values after mount to avoid SSR mismatch
   const [mounted, setMounted] = useState(false);
-  const [marketOpen, setMarketOpen] = useState(false);
+  const [marketTick, setMarketTick] = useState(0);
   useEffect(() => {
     setMounted(true);
-    setMarketOpen(isMarketOpen());
     // Re-check market status every minute
-    const id = setInterval(() => setMarketOpen(isMarketOpen()), 60_000);
+    const id = setInterval(() => setMarketTick(t => t + 1), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // Per-symbol market status — recomputes on symbol change or every minute
+  const currentMarketStatus = useMemo(() => {
+    if (!mounted) return null;
+    const asset = watchlist.find(a => a.symbol === selectedSymbol);
+    return getMarketStatus(selectedSymbol, asset?.category);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, selectedSymbol, watchlist, marketTick]);
 
   // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
@@ -643,7 +640,24 @@ export default function Home() {
             </button>
           </div>
           <div className="flex justify-between items-center">
-            <span>{t.marketStatus}: <span className={`font-bold ${marketOpen ? 'text-green-600' : 'text-red-500'}`}>{mounted ? (marketOpen ? t.open : t.closed) : '—'}</span></span>
+            <span>
+              {currentMarketStatus ? (
+                <>
+                  {currentMarketStatus.exchange}:{' '}
+                  <span className={`font-bold ${
+                    currentMarketStatus.session === 'regular' || currentMarketStatus.session === 'always'
+                      ? 'text-green-600'
+                      : currentMarketStatus.session === 'pre' || currentMarketStatus.session === 'after'
+                        ? 'text-yellow-500'
+                        : 'text-red-500'
+                  }`}>
+                    {currentMarketStatus.label}
+                  </span>
+                </>
+              ) : (
+                <>{t.marketStatus}: <span className="text-gray-400">—</span></>
+              )}
+            </span>
             <div className="flex items-center gap-3">
               <span>v3.1 {t.pro}</span>
               <button
@@ -673,6 +687,22 @@ export default function Home() {
             <h2 className={`text-xl md:text-2xl font-black tracking-tight ${darkMode ? 'text-gray-100' : 'text-gray-800'}`}>
               {selectedSymbol}
             </h2>
+            {currentMarketStatus && (
+              <span className={`hidden sm:inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                currentMarketStatus.session === 'regular' || currentMarketStatus.session === 'always'
+                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                  : currentMarketStatus.session === 'pre' || currentMarketStatus.session === 'after'
+                    ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-500'
+                    : 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${
+                  currentMarketStatus.session === 'regular' || currentMarketStatus.session === 'always'
+                    ? 'bg-green-500' : currentMarketStatus.session === 'pre' || currentMarketStatus.session === 'after'
+                    ? 'bg-yellow-500' : 'bg-red-500'
+                } ${currentMarketStatus.isOpen ? 'animate-pulse' : ''}`} />
+                {currentMarketStatus.exchange} · {currentMarketStatus.label}
+              </span>
+            )}
             {/* Follow / Alert button */}
             {selectedSymbol && (
               <button

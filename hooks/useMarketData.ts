@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Asset } from '@/config/assets';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import { StockDataPoint } from '@/lib/technical-analysis';
+import { getMarketStatus, getPollInterval } from '@/lib/marketHours';
 
 // Types (Moved from page.tsx or shared)
 export interface StockData {
@@ -58,6 +59,7 @@ export const useMarketData = (
     // Refs for caching and preventing unnecessary effect triggers
     const cacheRef = useRef<Record<string, { stock?: StockData, news?: NewsResponse }>>({});
     const selectedSymbolRef = useRef(selectedSymbol);
+    const lastPricePollRef = useRef<number>(0);
 
     // Update ref when symbol changes
     useEffect(() => {
@@ -142,10 +144,18 @@ export const useMarketData = (
 
         initialLoad();
 
-        // Fast refresh (2s) for active asset, but visibility-gated + server-cached
+        // Smart polling: interval adapts to market session
+        // Crypto → always 2s | Regular → 2s | Pre/After → 10s | Closed → 45s
         priceInterval = setInterval(() => {
-            if (!document.hidden) fetchPrice();
-        }, 2000);
+            if (document.hidden) return;
+            const asset = watchlist.find(a => a.symbol === selectedSymbol);
+            const session = getMarketStatus(selectedSymbol, asset?.category).session;
+            const gap = getPollInterval(session);
+            const now = Date.now();
+            if (now - lastPricePollRef.current < gap) return;
+            lastPricePollRef.current = now;
+            fetchPrice();
+        }, 2000); // Tick every 2s; gate internally by market session
 
         newsInterval = setInterval(() => {
             if (!document.hidden) fetchNews();

@@ -12,11 +12,17 @@ export const ASSETS: Asset[] = [
     { symbol: 'IWM', name: 'Russell 2000', category: 'Index' },
     { symbol: 'DIA', name: 'Dow Jones', category: 'Index' },
     { symbol: 'SMH', name: 'Semiconductors ETF', category: 'Index' },
+    { symbol: 'SOXX', name: 'iShares Semiconductor', category: 'Index' },
     { symbol: 'ARKK', name: 'ARK Innovation', category: 'Index' },
+    { symbol: 'XLK', name: 'Technology Select', category: 'Index' },
+    { symbol: 'XLE', name: 'Energy Select', category: 'Index' },
+    { symbol: 'XLF', name: 'Financial Select', category: 'Index' },
     { symbol: 'GLD', name: 'Gold', category: 'Index' },
     { symbol: 'SLV', name: 'Silver', category: 'Index' },
     { symbol: 'TLT', name: '20+ Yr Treasury', category: 'Index' },
     { symbol: 'VIX', name: 'Volatility Index', category: 'Index' },
+    { symbol: 'EEM', name: 'Emerging Markets', category: 'Index' },
+    { symbol: 'KWEB', name: 'China Internet ETF', category: 'Index' },
 
     // --- Crypto ---
     { symbol: 'BTC-USD', name: 'Bitcoin', category: 'Crypto' },
@@ -35,6 +41,12 @@ export const ASSETS: Asset[] = [
     { symbol: 'UNI-USD', name: 'Uniswap', category: 'Crypto' },
     { symbol: 'BCH-USD', name: 'Bitcoin Cash', category: 'Crypto' },
     { symbol: 'NEAR-USD', name: 'NEAR Protocol', category: 'Crypto' },
+    { symbol: 'SUI20947-USD', name: 'Sui', category: 'Crypto' },
+    { symbol: 'TRX-USD', name: 'Tron', category: 'Crypto' },
+    { symbol: 'TON11419-USD', name: 'Toncoin', category: 'Crypto' },
+    { symbol: 'RENDER-USD', name: 'Render', category: 'Crypto' },
+    { symbol: 'PEPE24478-USD', name: 'Pepe', category: 'Crypto' },
+    { symbol: 'ARB11841-USD', name: 'Arbitrum', category: 'Crypto' },
 
     // --- Stocks: Big Tech / AI / Software ---
     { symbol: 'NVDA', name: 'NVIDIA', category: 'Stock' },
@@ -62,6 +74,32 @@ export const ASSETS: Asset[] = [
     { symbol: 'PANW', name: 'Palo Alto', category: 'Stock' },
     { symbol: 'SNOW', name: 'Snowflake', category: 'Stock' },
     { symbol: 'MSTR', name: 'MicroStrategy', category: 'Stock' },
+    { symbol: 'ARM', name: 'ARM Holdings', category: 'Stock' },
+    { symbol: 'MRVL', name: 'Marvell Technology', category: 'Stock' },
+    { symbol: 'VRT', name: 'Vertiv', category: 'Stock' },
+    { symbol: 'DELL', name: 'Dell Technologies', category: 'Stock' },
+    { symbol: 'ANET', name: 'Arista Networks', category: 'Stock' },
+    { symbol: 'APP', name: 'AppLovin', category: 'Stock' },
+    { symbol: 'TTD', name: 'The Trade Desk', category: 'Stock' },
+    { symbol: 'DDOG', name: 'Datadog', category: 'Stock' },
+    { symbol: 'SHOP', name: 'Shopify', category: 'Stock' },
+    { symbol: 'NET', name: 'Cloudflare', category: 'Stock' },
+    { symbol: 'ZS', name: 'Zscaler', category: 'Stock' },
+    { symbol: 'FTNT', name: 'Fortinet', category: 'Stock' },
+    { symbol: 'MDB', name: 'MongoDB', category: 'Stock' },
+    { symbol: 'AMAT', name: 'Applied Materials', category: 'Stock' },
+    { symbol: 'LRCX', name: 'Lam Research', category: 'Stock' },
+    { symbol: 'KLAC', name: 'KLA Corp', category: 'Stock' },
+    { symbol: 'MU', name: 'Micron Technology', category: 'Stock' },
+    { symbol: 'QCOM', name: 'Qualcomm', category: 'Stock' },
+
+    // --- Stocks: Strong Momentum / Compounders ---
+    { symbol: 'AXON', name: 'Axon Enterprise', category: 'Stock' },
+    { symbol: 'FICO', name: 'Fair Isaac', category: 'Stock' },
+    { symbol: 'CEG', name: 'Constellation Energy', category: 'Stock' },
+    { symbol: 'VST', name: 'Vistra Energy', category: 'Stock' },
+    { symbol: 'SPOT', name: 'Spotify', category: 'Stock' },
+    { symbol: 'MNST', name: 'Monster Beverage', category: 'Stock' },
 
     // --- Stocks: Finance / Fintech ---
     { symbol: 'JPM', name: 'JPMorgan', category: 'Stock' },
@@ -94,7 +132,7 @@ export const ASSETS: Asset[] = [
     { symbol: 'GM', name: 'General Motors', category: 'Stock' },
     { symbol: 'RACE', name: 'Ferrari', category: 'Stock' },
 
-    // --- Stocks: Health & Industrial ---
+    // --- Stocks: Health / Biotech ---
     { symbol: 'LLY', name: 'Eli Lilly', category: 'Stock' },
     { symbol: 'NVO', name: 'Novo Nordisk', category: 'Stock' },
     { symbol: 'JNJ', name: 'Johnson & Johnson', category: 'Stock' },
@@ -102,12 +140,26 @@ export const ASSETS: Asset[] = [
     { symbol: 'PFE', name: 'Pfizer', category: 'Stock' },
     { symbol: 'ABBV', name: 'AbbVie', category: 'Stock' },
     { symbol: 'MRK', name: 'Merck', category: 'Stock' },
+    { symbol: 'ISRG', name: 'Intuitive Surgical', category: 'Stock' },
+    { symbol: 'AMGN', name: 'Amgen', category: 'Stock' },
+    { symbol: 'GILD', name: 'Gilead Sciences', category: 'Stock' },
+    { symbol: 'TMO', name: 'Thermo Fisher', category: 'Stock' },
+
+    // --- Stocks: Energy ---
     { symbol: 'XOM', name: 'Exxon Mobil', category: 'Stock' },
     { symbol: 'CVX', name: 'Chevron', category: 'Stock' },
+    { symbol: 'COP', name: 'ConocoPhillips', category: 'Stock' },
+    { symbol: 'NEE', name: 'NextEra Energy', category: 'Stock' },
+    { symbol: 'FSLR', name: 'First Solar', category: 'Stock' },
+
+    // --- Stocks: Defense / Industrial ---
     { symbol: 'CAT', name: 'Caterpillar', category: 'Stock' },
     { symbol: 'GE', name: 'General Electric', category: 'Stock' },
     { symbol: 'BA', name: 'Boeing', category: 'Stock' },
     { symbol: 'LMT', name: 'Lockheed Martin', category: 'Stock' },
+    { symbol: 'RTX', name: 'RTX Corp', category: 'Stock' },
+    { symbol: 'NOC', name: 'Northrop Grumman', category: 'Stock' },
+    { symbol: 'GD', name: 'General Dynamics', category: 'Stock' },
 
     // --- Forex ---
     { symbol: 'EURUSD=X', name: 'EUR/USD', category: 'Forex' },
@@ -116,6 +168,8 @@ export const ASSETS: Asset[] = [
     { symbol: 'USDCHF=X', name: 'USD/CHF', category: 'Forex' },
     { symbol: 'AUDUSD=X', name: 'AUD/USD', category: 'Forex' },
     { symbol: 'USDCAD=X', name: 'USD/CAD', category: 'Forex' },
+    { symbol: 'EURGBP=X', name: 'EUR/GBP', category: 'Forex' },
+    { symbol: 'NZDUSD=X', name: 'NZD/USD', category: 'Forex' },
 
     // --- Stocks: Germany (DAX) & Europe ---
     { symbol: 'SAP.DE', name: 'SAP', category: 'Stock' },
@@ -131,6 +185,9 @@ export const ASSETS: Asset[] = [
     { symbol: 'ADS.DE', name: 'Adidas', category: 'Stock' },
     { symbol: 'DHL.DE', name: 'DHL Group', category: 'Stock' },
     { symbol: 'MUV2.DE', name: 'Munich Re', category: 'Stock' },
+    { symbol: 'RHM.DE', name: 'Rheinmetall', category: 'Stock' },
+    { symbol: 'DBK.DE', name: 'Deutsche Bank', category: 'Stock' },
+    { symbol: 'ENR.DE', name: 'Siemens Energy', category: 'Stock' },
     { symbol: 'MC.PA', name: 'LVMH', category: 'Stock' },
     { symbol: 'OR.PA', name: 'L\'Oréal', category: 'Stock' },
     { symbol: 'RMS.PA', name: 'Hermès', category: 'Stock' },

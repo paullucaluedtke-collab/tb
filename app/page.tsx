@@ -8,13 +8,19 @@ import DeepAnalysisCard from '@/components/DeepAnalysisCard';
 import PositionCalculator from '@/components/PositionCalculator';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import AlertToastContainer from '@/components/AlertToast';
+import PriceAlertsPanel from '@/components/PriceAlertsPanel';
+import PaperTradesPanel from '@/components/PaperTradesPanel';
+import ScreenerModal from '@/components/ScreenerModal';
 import { useAlerts } from '@/hooks/useAlerts';
+import { useSignalHistory } from '@/hooks/useSignalHistory';
+import { usePriceAlerts } from '@/hooks/usePriceAlerts';
+import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
   Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers, LogOut,
-  Bell, BellOff, BellRing, History, RotateCcw
+  Bell, BellOff, BellRing, History, RotateCcw, Clock, Target, SlidersHorizontal
 } from 'lucide-react';
 import { ASSETS, Asset } from '@/config/assets';
 
@@ -203,6 +209,17 @@ export default function Home() {
   // Alerts + Follow system
   const { followedSymbols, isFollowed, toggleFollow, toasts, dismissToast, alertHistory, clearHistory, notifPermission, requestPermission } = useAlerts(summaries);
   const [showAlertHistory, setShowAlertHistory] = useState(false);
+
+  // Signal history
+  const { getDuration } = useSignalHistory(summaries);
+
+  // Price alerts
+  const { alerts: priceAlerts, triggered: triggeredAlerts, addAlert: addPriceAlert, removeAlert: removePriceAlert, toggleAlert: togglePriceAlert, clearTriggered: clearTriggeredAlert, alertsForSymbol } = usePriceAlerts(summaries, notifPermission);
+  const [showPriceAlerts, setShowPriceAlerts] = useState(false);
+
+  // Paper trades + screener modals
+  const [showPaperTrades, setShowPaperTrades] = useState(false);
+  const [showScreener, setShowScreener] = useState(false);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(false);
@@ -420,6 +437,14 @@ export default function Home() {
 
   const locale = lang === 'de' ? 'de-DE' : 'en-US';
 
+  // Relative strength vs benchmark
+  const selectedAsset = watchlist.find(a => a.symbol === selectedSymbol);
+  const benchmarkSym = selectedAsset ? getBenchmark(selectedAsset) : 'SPY';
+  const rs = relativeStrength(
+    summaries[selectedSymbol]?.changePercent,
+    summaries[benchmarkSym]?.changePercent
+  );
+
   return (
     <div className={`flex h-screen font-sans overflow-hidden relative ${darkMode ? 'bg-gray-900 text-gray-100' : 'bg-[#F5F5F7] text-slate-800'}`}>
 
@@ -601,17 +626,34 @@ export default function Home() {
         </div>
 
         {/* Status Footer */}
-        <div className={`p-4 border-t text-xs text-gray-400 flex justify-between items-center ${darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
-          <span>{t.marketStatus}: <span className={`font-bold ${marketOpen ? 'text-green-600' : 'text-red-500'}`}>{mounted ? (marketOpen ? t.open : t.closed) : '—'}</span></span>
-          <div className="flex items-center gap-3">
-            <span>v3.0 {t.pro}</span>
+        <div className={`p-4 border-t text-xs text-gray-400 flex flex-col gap-2 ${darkMode ? 'border-gray-700 bg-gray-800/50' : 'border-gray-100 bg-gray-50/50'}`}>
+          {/* Mobile-only quick action buttons */}
+          <div className="flex gap-2 sm:hidden">
             <button
-              onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login'; }}
-              className="text-gray-400 hover:text-red-500 transition-colors"
-              title="Logout"
+              onClick={() => { setShowScreener(true); setShowMobileSidebar(false); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
             >
-              <LogOut size={14} />
+              <SlidersHorizontal size={13} /> Screener
             </button>
+            <button
+              onClick={() => { setShowPaperTrades(true); setShowMobileSidebar(false); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
+            >
+              <Target size={13} /> Trades
+            </button>
+          </div>
+          <div className="flex justify-between items-center">
+            <span>{t.marketStatus}: <span className={`font-bold ${marketOpen ? 'text-green-600' : 'text-red-500'}`}>{mounted ? (marketOpen ? t.open : t.closed) : '—'}</span></span>
+            <div className="flex items-center gap-3">
+              <span>v3.1 {t.pro}</span>
+              <button
+                onClick={async () => { await fetch('/api/auth', { method: 'DELETE' }); window.location.href = '/login'; }}
+                className="text-gray-400 hover:text-red-500 transition-colors"
+                title="Logout"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -662,10 +704,38 @@ export default function Home() {
                     {summaries[selectedSymbol].changePercent!.toFixed(2)}%
                   </span>
                 )}
+                {rs !== null && (
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full hidden md:inline-flex items-center gap-1 ${rs >= 0
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
+                    : 'bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-400'
+                    }`}
+                    title={`Relative strength vs ${benchmarkSym}`}
+                  >
+                    RS {rs >= 0 ? '+' : ''}{rs.toFixed(1)}%
+                  </span>
+                )}
               </div>
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Screener */}
+            <button
+              onClick={() => setShowScreener(true)}
+              className={`p-1.5 rounded-lg transition-all hidden sm:flex items-center gap-1 text-xs font-bold ${darkMode ? 'bg-gray-700 text-gray-300 hover:text-white' : 'bg-gray-100 text-gray-500 hover:text-indigo-600'}`}
+              title="Signal Screener"
+            >
+              <SlidersHorizontal size={14} />
+              <span className="hidden md:inline">{lang === 'de' ? 'Screener' : 'Screener'}</span>
+            </button>
+            {/* Paper Trades */}
+            <button
+              onClick={() => setShowPaperTrades(true)}
+              className={`p-1.5 rounded-lg transition-all hidden sm:flex items-center gap-1 text-xs font-bold ${darkMode ? 'bg-gray-700 text-gray-300 hover:text-white' : 'bg-gray-100 text-gray-500 hover:text-indigo-600'}`}
+              title="Paper Trading"
+            >
+              <Target size={14} />
+              <span className="hidden md:inline">{lang === 'de' ? 'Trades' : 'Trades'}</span>
+            </button>
             {/* Alert History Button */}
             <button
               onClick={() => setShowAlertHistory(v => !v)}
@@ -751,6 +821,18 @@ export default function Home() {
                                    `}>
                       {t.signal[stockData.recommendation.action as keyof typeof t.signal] || stockData.recommendation.action}
                     </h4>
+                    {(() => {
+                      const dur = getDuration(selectedSymbol);
+                      if (!dur) return null;
+                      return (
+                        <div className="flex items-center gap-1.5 mt-2">
+                          <Clock size={12} className="text-gray-400" />
+                          <span className="text-xs text-gray-400 font-medium">
+                            {dur.action} {lang === 'de' ? 'seit' : 'for'} {dur.label}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <span className={`px-4 py-1.5 rounded-full text-xs font-bold border
                                    ${stockData.recommendation.confidence === 'HIGH'
@@ -810,6 +892,33 @@ export default function Home() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Price Alerts */}
+              <div>
+                <button
+                  onClick={() => setShowPriceAlerts(v => !v)}
+                  className={`flex items-center gap-2 text-xs font-bold mb-2 px-1 ${darkMode ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  <Bell size={13} className={priceAlerts.filter(a => a.symbol === selectedSymbol && a.active).length > 0 ? 'text-indigo-500' : ''} />
+                  {lang === 'de' ? 'Preisalarme' : 'Price Alerts'}
+                  {alertsForSymbol(selectedSymbol).length > 0 && (
+                    <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-1.5 py-0.5 rounded-full text-[10px]">
+                      {alertsForSymbol(selectedSymbol).length}
+                    </span>
+                  )}
+                  <span className="text-gray-400">{showPriceAlerts ? '▲' : '▼'}</span>
+                </button>
+                {showPriceAlerts && (
+                  <PriceAlertsPanel
+                    symbol={selectedSymbol}
+                    currentPrice={summaries[selectedSymbol]?.price}
+                    alerts={alertsForSymbol(selectedSymbol)}
+                    onAdd={addPriceAlert}
+                    onRemove={removePriceAlert}
+                    onToggle={togglePriceAlert}
+                  />
+                )}
               </div>
 
               {/* AI Deep Analysis — directly below signal, prominent position */}
@@ -961,6 +1070,25 @@ export default function Home() {
 
       {/* Alert Toasts — fixed bottom-right */}
       <AlertToastContainer alerts={toasts} onDismiss={dismissToast} />
+
+      {/* Paper Trades Modal */}
+      {showPaperTrades && (
+        <PaperTradesPanel
+          summaries={summaries}
+          watchlistSymbols={watchlist.map(a => a.symbol)}
+          onClose={() => setShowPaperTrades(false)}
+        />
+      )}
+
+      {/* Screener Modal */}
+      {showScreener && (
+        <ScreenerModal
+          assets={watchlist}
+          summaries={summaries}
+          onPick={(sym) => { setSelectedSymbol(sym); setShowMobileSidebar(false); }}
+          onClose={() => setShowScreener(false)}
+        />
+      )}
     </div>
   );
 }

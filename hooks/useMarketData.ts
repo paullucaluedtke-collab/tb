@@ -176,10 +176,13 @@ export const useMarketData = (
         const fetchBatchPrices = async () => {
             if (symbolList.length === 0) return;
             try {
+                // Always include benchmarks for relative strength calculations
+                const benchmarks = ['SPY', 'BTC-USD'];
+                const withBenchmarks = Array.from(new Set([...symbolList, ...benchmarks]));
                 const res = await fetch('/api/batch-quotes', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbols: symbolList })
+                    body: JSON.stringify({ symbols: withBenchmarks })
                 });
                 const json = await res.json();
 

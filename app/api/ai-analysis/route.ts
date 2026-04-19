@@ -40,8 +40,19 @@ export async function POST(request: Request) {
             }
         }));
 
-        // 4. Send to Claude
-        const result = await analyzeWithClaude(fullText, symbol);
+        // 4. Fetch geo context (non-blocking, best-effort)
+        let geoContext: string | undefined;
+        try {
+            const geoRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/geo-news`);
+            if (geoRes.ok) {
+                const geoData = await geoRes.json();
+                const headlines: string[] = (geoData.news || []).slice(0, 5).map((n: any) => `- ${n.title}`);
+                if (headlines.length > 0) geoContext = headlines.join('\n');
+            }
+        } catch (_) {}
+
+        // 5. Send to Claude with geopolitical context
+        const result = await analyzeWithClaude(fullText, symbol, geoContext);
 
         return NextResponse.json(result);
 

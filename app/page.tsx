@@ -13,6 +13,7 @@ import PaperTradesPanel from '@/components/PaperTradesPanel';
 import ScreenerModal from '@/components/ScreenerModal';
 import DashboardSummary from '@/components/DashboardSummary';
 import SignalAccuracyPanel from '@/components/SignalAccuracyPanel';
+import GeoRiskPanel from '@/components/GeoRiskPanel';
 import { useAlerts } from '@/hooks/useAlerts';
 import { useSignalHistory } from '@/hooks/useSignalHistory';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
@@ -846,6 +847,9 @@ export default function Home() {
           ) : selectedSymbol && stockData && stockData.latest && stockData.recommendation && Array.isArray(stockData.data) && stockData.data.length > 0 ? (
             <ErrorBoundary>
             <div className="max-w-6xl mx-auto space-y-6">
+
+              {/* Geopolitical & Macro News */}
+              <GeoRiskPanel lang={lang} />
 
               {/* Market Pulse Dashboard — shows signal counts, top longs/shorts, volume spikes */}
               <DashboardSummary

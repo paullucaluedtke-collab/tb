@@ -10,10 +10,14 @@ export interface AIAnalysisResult {
     reasoning: string;
 }
 
-export async function analyzeWithClaude(text: string, symbol: string): Promise<AIAnalysisResult> {
+export async function analyzeWithClaude(text: string, symbol: string, geoContext?: string): Promise<AIAnalysisResult> {
     if (!process.env.ANTHROPIC_API_KEY) {
         throw new Error('Missing ANTHROPIC_API_KEY');
     }
+
+    const geoSection = geoContext
+        ? `\n\nGlobal Macro & Geopolitical Context (consider indirect effects on ${symbol}):\n${geoContext}`
+        : '';
 
     try {
         const message = await anthropic.messages.create({
@@ -22,18 +26,18 @@ export async function analyzeWithClaude(text: string, symbol: string): Promise<A
             temperature: 0,
             system: `You are a senior hedge fund analyst with 20+ years of experience. Analyze financial news and provide:
 1. A strict sentiment score (1-10): 1=Extremely Bearish, 5=Neutral, 10=Extremely Bullish
-2. Consider: price catalysts, earnings impact, macro factors, sector rotation, institutional sentiment
+2. Consider: price catalysts, earnings impact, macro factors, sector rotation, institutional sentiment, geopolitical risks
 3. Weight recent events more heavily than older ones
 IMPORTANT: Output ONLY valid JSON. No markdown code blocks. No introductory text.`,
             messages: [
                 {
                     role: "user",
                     content: `Analyze the following news for "${symbol}".
-Consider: fundamental impact, short-term catalysts, risk factors, and market positioning.
+Consider: fundamental impact, short-term catalysts, risk factors, geopolitical exposure, and market positioning.
 Output valid JSON with keys: "score" (number 1-10), "summary" (max 2 sentences), "reasoning" (concise bullet points of key factors).
 
 News Text:
-${text}`
+${text}${geoSection}`
                 }
             ]
         });

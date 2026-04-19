@@ -11,9 +11,12 @@ import AlertToastContainer from '@/components/AlertToast';
 import PriceAlertsPanel from '@/components/PriceAlertsPanel';
 import PaperTradesPanel from '@/components/PaperTradesPanel';
 import ScreenerModal from '@/components/ScreenerModal';
+import DashboardSummary from '@/components/DashboardSummary';
+import SignalAccuracyPanel from '@/components/SignalAccuracyPanel';
 import { useAlerts } from '@/hooks/useAlerts';
 import { useSignalHistory } from '@/hooks/useSignalHistory';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
+import { useSignalAccuracy } from '@/hooks/useSignalAccuracy';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
 import { getMarketStatus } from '@/lib/marketHours';
 import { StockDataPoint } from '@/lib/technical-analysis';
@@ -21,7 +24,8 @@ import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
   Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers, LogOut,
-  Bell, BellOff, BellRing, History, RotateCcw, Clock, Target, SlidersHorizontal
+  Bell, BellOff, BellRing, History, RotateCcw, Clock, Target, SlidersHorizontal,
+  CalendarClock, Volume2, AlertTriangle
 } from 'lucide-react';
 import { ASSETS, Asset } from '@/config/assets';
 
@@ -202,6 +206,9 @@ export default function Home() {
 
   // Signal history
   const { getDuration } = useSignalHistory(summaries);
+
+  // Signal accuracy tracker (30-day rolling win rate)
+  const { stats: accuracyStats, reset: resetAccuracy } = useSignalAccuracy(summaries);
 
   // Price alerts
   const { alerts: priceAlerts, triggered: triggeredAlerts, addAlert: addPriceAlert, removeAlert: removePriceAlert, toggleAlert: togglePriceAlert, clearTriggered: clearTriggeredAlert, alertsForSymbol } = usePriceAlerts(summaries, notifPermission);
@@ -840,6 +847,14 @@ export default function Home() {
             <ErrorBoundary>
             <div className="max-w-6xl mx-auto space-y-6">
 
+              {/* Market Pulse Dashboard — shows signal counts, top longs/shorts, volume spikes */}
+              <DashboardSummary
+                assets={watchlist}
+                summaries={summaries}
+                onPick={(sym) => { setSelectedSymbol(sym); setShowMobileSidebar(false); }}
+                lang={lang}
+              />
+
               {/* Technical Signal Card — full width */}
               <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-3 sm:gap-0 mb-5">
@@ -863,6 +878,35 @@ export default function Home() {
                         </div>
                       );
                     })()}
+                    {/* Contextual badges: earnings warning + unusual volume */}
+                    <div className="flex flex-wrap items-center gap-2 mt-3">
+                      {stockData.nextEarnings && (() => {
+                        const days = Math.ceil((new Date(stockData.nextEarnings).getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+                        if (days < 0 || days > 14) return null;
+                        const urgent = days <= 3;
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${urgent
+                            ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                            : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                            }`}
+                            title={new Date(stockData.nextEarnings).toLocaleDateString(locale)}
+                          >
+                            <CalendarClock size={11} />
+                            {lang === 'de'
+                              ? (days === 0 ? 'Earnings heute' : days === 1 ? 'Earnings morgen' : `Earnings in ${days}T`)
+                              : (days === 0 ? 'Earnings today' : days === 1 ? 'Earnings tomorrow' : `Earnings in ${days}d`)}
+                          </span>
+                        );
+                      })()}
+                      {stockData.unusualVolume?.isUnusual && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-800"
+                          title={lang === 'de' ? 'Ungewöhnliches Volumen' : 'Unusual volume vs 20d avg'}
+                        >
+                          <Volume2 size={11} />
+                          {stockData.unusualVolume.ratio.toFixed(1)}x {lang === 'de' ? 'Volumen' : 'volume'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <span className={`px-4 py-1.5 rounded-full text-xs font-bold border
                                    ${stockData.recommendation.confidence === 'HIGH'
@@ -959,6 +1003,13 @@ export default function Home() {
                 loading={aiLoading}
                 onAnalyze={() => triggerAiAnalysis()}
                 hasNews={!!newsData?.news && newsData.news.length > 0}
+              />
+
+              {/* Signal Accuracy — rolling 30-day win rate across tracked signals */}
+              <SignalAccuracyPanel
+                stats={accuracyStats}
+                onReset={resetAccuracy}
+                lang={lang}
               />
 
               {/* About Section */}

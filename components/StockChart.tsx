@@ -77,7 +77,7 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                                 <Area type="monotone" dataKey="bbLower" stroke="#9333ea" strokeWidth={1} strokeDasharray="4 4" fill="#9333ea" fillOpacity={0.05} name="BB Lower" dot={false} />
                             </>
                         )}
-                        <Line type="monotone" dataKey="close" stroke="#000000" dot={false} strokeWidth={2} name="Price" />
+                        <Line type="monotone" dataKey="close" stroke="#6366f1" dot={false} strokeWidth={2} name="Price" />
                         {mode === 'scalp' ? (
                             <>
                                 <Line type="monotone" dataKey="ema9" stroke="#f59e0b" dot={false} strokeWidth={1.5} name="EMA 9" />

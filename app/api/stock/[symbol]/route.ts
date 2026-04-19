@@ -18,6 +18,12 @@ const profileCache = new LRUCache<string, any>({
     ttl: 6 * 60 * 60 * 1000, // 6 hours (profile rarely changes)
 });
 
+// Cache for earnings/calendar events — changes ~quarterly
+const calendarCache = new LRUCache<string, any>({
+    max: 200,
+    ttl: 12 * 60 * 60 * 1000, // 12 hours
+});
+
 // Cache for headlines-based sentiment (changes slowly)
 const sentimentCache = new LRUCache<string, 'Bullish' | 'Bearish' | 'Neutral'>({
     max: 200,
@@ -110,12 +116,41 @@ export async function GET(
             profile.industry = quoteSummary.assetProfile.industry;
         }
 
+        // Earnings date (cached 12h) — important for swing traders
+        let nextEarnings: string | null = calendarCache.get(symbol);
+        if (!calendarCache.has(symbol)) {
+            try {
+                const calSummary: any = await yahooFinance.quoteSummary(symbol, { modules: ['calendarEvents'] });
+                const earningsDates: any[] = calSummary?.calendarEvents?.earnings?.earningsDate || [];
+                const future = earningsDates
+                    .map((d: any) => (d instanceof Date ? d : new Date(d)))
+                    .filter((d: Date) => !isNaN(d.getTime()) && d.getTime() > Date.now())
+                    .sort((a: Date, b: Date) => a.getTime() - b.getTime());
+                nextEarnings = future[0] ? future[0].toISOString() : null;
+                calendarCache.set(symbol, nextEarnings);
+            } catch (e) {
+                calendarCache.set(symbol, null);
+                nextEarnings = null;
+            }
+        }
+
+        // Unusual volume detection: today's volume vs 20-day SMA
+        const unusualVolume =
+            latest?.volume && latest?.volumeSma20 && latest.volumeSma20 > 0
+                ? {
+                    ratio: latest.volume / latest.volumeSma20,
+                    isUnusual: latest.volume / latest.volumeSma20 >= 2,
+                }
+                : null;
+
         const responseData = {
             symbol,
             data: enrichedData, // Return full history for charts
             latest: latest,
             recommendation, // { action, reason, confidence }
-            profile
+            profile,
+            nextEarnings, // ISO string or null
+            unusualVolume, // { ratio, isUnusual } or null
         };
 
         // Save to cache

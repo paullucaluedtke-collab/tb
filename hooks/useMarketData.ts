@@ -16,6 +16,8 @@ export interface StockData {
         industry?: string;
         website?: string;
     };
+    nextEarnings?: string | null;
+    unusualVolume?: { ratio: number; isUnusual: boolean } | null;
 }
 
 export interface NewsItem {
@@ -48,7 +50,7 @@ export const useMarketData = (
     // State
     const [stockData, setStockData] = useState<StockData | null>(null);
     const [newsData, setNewsData] = useState<NewsResponse | null>(null);
-    const [summaries, setSummaries] = useState<Record<string, { price: number, change?: number, changePercent?: number, fiftyTwoWeekHigh?: number, fiftyTwoWeekLow?: number, recommendation: TradeRecommendation, sentiment: SentimentResult }>>({});
+    const [summaries, setSummaries] = useState<Record<string, { price: number, change?: number, changePercent?: number, fiftyTwoWeekHigh?: number, fiftyTwoWeekLow?: number, recommendation: TradeRecommendation, sentiment: SentimentResult, unusualVolume?: number | null }>>({});
     // Keyed by symbol so switching assets never shows stale data from a different symbol
     const [multiTimeframeMap, setMultiTimeframeMap] = useState<Record<string, Record<string, TradeRecommendation>>>({});
     const [aiInsights, setAiInsights] = useState<Record<string, AIResult>>({});
@@ -322,6 +324,7 @@ export const useMarketData = (
                                 ...next[symbol],
                                 price: data.latestClose || next[symbol]?.price,
                                 recommendation: data.recommendation,
+                                unusualVolume: data.unusualVolume,
                                 sentiment: next[symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
                             };
                         });

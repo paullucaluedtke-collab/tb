@@ -58,10 +58,18 @@ export async function POST(request: Request) {
 
                     const enrichedData = calculateIndicators(quotes);
                     const recommendation = getTradeSignal(enrichedData, activeMode, 'Neutral');
+                    const latest = enrichedData[enrichedData.length - 1];
+
+                    // Unusual volume: today's volume vs 20-day SMA
+                    const unusualVolume =
+                        latest?.volume && latest?.volumeSma20 && latest.volumeSma20 > 0
+                            ? latest.volume / latest.volumeSma20
+                            : null;
 
                     const entry = {
                         recommendation,
-                        latestClose: quotes[quotes.length - 1].close
+                        latestClose: quotes[quotes.length - 1].close,
+                        unusualVolume, // ratio
                     };
                     analysisCache.set(`${symbol}-${activeMode}`, entry);
                     results[symbol] = entry;

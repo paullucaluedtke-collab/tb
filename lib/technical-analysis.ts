@@ -1,4 +1,4 @@
-import { SMA, RSI, MACD, EMA, BollingerBands, ATR, StochasticRSI } from 'technicalindicators';
+import { SMA, RSI, MACD, EMA, BollingerBands, ATR, StochasticRSI, ADX } from 'technicalindicators';
 
 export interface StockDataPoint {
     date: string;
@@ -34,6 +34,7 @@ export interface StockDataPoint {
         k?: number;
         d?: number;
     };
+    adx?: number; // ADX trend strength (>20 = trending, <20 = choppy)
 }
 
 // Input can be raw Yahoo Finance data which has Date objects
@@ -83,6 +84,9 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
         dPeriod: 3,
     });
 
+    // Calculate ADX (14-period) for trend strength
+    const adx14 = ADX.calculate({ period: 14, high: highs, low: lows, close: closes });
+
     // Calculate Volume SMA (20-period) for volume confirmation
     const volumes = data.map((d) => d.volume || 0);
     const volumeSma20 = SMA.calculate({ period: 20, values: volumes });
@@ -127,6 +131,7 @@ export const calculateIndicators = (data: any[]): StockDataPoint[] => {
             ema9: getIndicatorValue(ema9, data.length - ema9.length),
             ema21: getIndicatorValue(ema21, data.length - ema21.length),
             stochRsi: getIndicatorValue(stochRsi, data.length - stochRsi.length),
+            adx: getIndicatorValue(adx14, data.length - adx14.length)?.adx,
         };
     });
 

@@ -92,8 +92,26 @@ export async function GET(
         // Get the latest values for a quick summary
         const latest = enrichedData[enrichedData.length - 1];
 
-        // Get Trade Recommendation with Mode & Sentiment
-        const recommendation = getTradeSignal(enrichedData, mode, sentimentLabel);
+        // Earnings date (cached 12h) — must be fetched BEFORE signal generation for earnings gate
+        let nextEarnings: string | null = calendarCache.get(symbol);
+        if (!calendarCache.has(symbol)) {
+            try {
+                const calSummary: any = await yahooFinance.quoteSummary(symbol, { modules: ['calendarEvents'] });
+                const earningsDates: any[] = calSummary?.calendarEvents?.earnings?.earningsDate || [];
+                const future = earningsDates
+                    .map((d: any) => (d instanceof Date ? d : new Date(d)))
+                    .filter((d: Date) => !isNaN(d.getTime()) && d.getTime() > Date.now())
+                    .sort((a: Date, b: Date) => a.getTime() - b.getTime());
+                nextEarnings = future[0] ? future[0].toISOString() : null;
+                calendarCache.set(symbol, nextEarnings);
+            } catch (e) {
+                calendarCache.set(symbol, null);
+                nextEarnings = null;
+            }
+        }
+
+        // Get Trade Recommendation with Mode, Sentiment & Earnings context
+        const recommendation = getTradeSignal(enrichedData, mode, sentimentLabel, nextEarnings);
 
         // Prepare Profile Data
         let profile = {
@@ -114,24 +132,6 @@ export async function GET(
             profile.description = quoteSummary.assetProfile.description || profile.description;
             profile.sector = quoteSummary.assetProfile.sector;
             profile.industry = quoteSummary.assetProfile.industry;
-        }
-
-        // Earnings date (cached 12h) — important for swing traders
-        let nextEarnings: string | null = calendarCache.get(symbol);
-        if (!calendarCache.has(symbol)) {
-            try {
-                const calSummary: any = await yahooFinance.quoteSummary(symbol, { modules: ['calendarEvents'] });
-                const earningsDates: any[] = calSummary?.calendarEvents?.earnings?.earningsDate || [];
-                const future = earningsDates
-                    .map((d: any) => (d instanceof Date ? d : new Date(d)))
-                    .filter((d: Date) => !isNaN(d.getTime()) && d.getTime() > Date.now())
-                    .sort((a: Date, b: Date) => a.getTime() - b.getTime());
-                nextEarnings = future[0] ? future[0].toISOString() : null;
-                calendarCache.set(symbol, nextEarnings);
-            } catch (e) {
-                calendarCache.set(symbol, null);
-                nextEarnings = null;
-            }
         }
 
         // Unusual volume detection: today's volume vs 20-day SMA

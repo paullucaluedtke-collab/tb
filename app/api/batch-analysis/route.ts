@@ -4,6 +4,7 @@ import { LRUCache } from 'lru-cache';
 const yahooFinance = new YahooFinance();
 import { calculateIndicators } from '@/lib/technical-analysis';
 import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
+import { getSharedSentiment } from '@/lib/sentimentCache';
 
 // Per-symbol analysis cache - heavy work (chart fetch + indicators) should not run per user per minute
 const analysisCache = new LRUCache<string, any>({
@@ -57,7 +58,10 @@ export async function POST(request: Request) {
                     }
 
                     const enrichedData = calculateIndicators(quotes);
-                    const recommendation = getTradeSignal(enrichedData, activeMode, 'Neutral');
+                    // Use shared sentiment cache (primed by /api/news/[symbol]) instead of
+                    // always defaulting to Neutral — makes sidebar signals sentiment-aware.
+                    const sentimentLabel = getSharedSentiment(symbol);
+                    const recommendation = getTradeSignal(enrichedData, activeMode, sentimentLabel);
                     const latest = enrichedData[enrichedData.length - 1];
 
                     // Unusual volume: today's volume vs 20-day SMA

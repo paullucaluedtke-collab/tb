@@ -4,6 +4,7 @@ import { LRUCache } from 'lru-cache';
 const yahooFinance = new YahooFinance();
 
 import { analyzeSentiment } from '@/lib/analysis';
+import { setSharedSentiment } from '@/lib/sentimentCache';
 
 import { ASSETS } from '@/config/assets';
 
@@ -95,6 +96,10 @@ export async function GET(
         // Analyze Sentiment
         const headlines = newsItems.map((item: any) => item.title);
         const sentiment = analyzeSentiment(headlines);
+
+        // Prime shared cache so stock & batch-analysis routes reuse the high-quality
+        // filtered headlines sentiment instead of recomputing from fewer headlines.
+        setSharedSentiment(symbol, sentiment.label);
 
         const responseData = {
             symbol,

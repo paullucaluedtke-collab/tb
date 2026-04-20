@@ -4,6 +4,7 @@ import { LRUCache } from 'lru-cache';
 const yahooFinance = new YahooFinance();
 import { calculateIndicators } from '@/lib/technical-analysis';
 import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
+import { sharedSentimentCache } from '@/lib/sentimentCache';
 
 // Global cache for API route. Frontend polls active asset at 2s — 5s TTL means
 // ~60% cache hits while keeping data fresh for real-time feel.
@@ -24,11 +25,8 @@ const calendarCache = new LRUCache<string, any>({
     ttl: 12 * 60 * 60 * 1000, // 12 hours
 });
 
-// Cache for headlines-based sentiment (changes slowly)
-const sentimentCache = new LRUCache<string, 'Bullish' | 'Bearish' | 'Neutral'>({
-    max: 200,
-    ttl: 5 * 60 * 1000, // 5 minutes
-});
+// Sentiment uses shared cache (lib/sentimentCache) so news route can prime it
+const sentimentCache = sharedSentimentCache;
 
 export async function GET(
     request: Request,

@@ -205,7 +205,9 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const stochBullish = stochK >= 0 && stochK < 0.2  && stochD >= 0 && stochK > stochD && prevStochK <= prevStochD;
     const stochBearish = stochK >= 0 && stochK > 0.8  && stochD >= 0 && stochK < stochD && prevStochK >= prevStochD;
 
-    // ── RSI Divergence (15-bar lookback, noise-tolerant thresholds) ───────
+    // ── RSI Divergence (15-bar lookback, ATR-adaptive price tolerance) ────
+    // Volatile assets (BTC, oil) need wider tolerance; calm stocks need tighter.
+    // Half-ATR acts as a volatility-scaled "near the extreme" window.
     let bullishDivergence = false;
     let bearishDivergence = false;
     if (data.length >= 15) {
@@ -216,8 +218,10 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         if (rsiValues.length >= 10) {
             const rsiMin = Math.min(...rsiValues);
             const rsiMax = Math.max(...rsiValues);
-            if (latest.low <= priceMin * 1.01 && (latest.rsi14 || 50) > rsiMin + 8) bullishDivergence = true;
-            if (latest.high >= priceMax * 0.99 && (latest.rsi14 || 50) < rsiMax - 8) bearishDivergence = true;
+            const atrRef = latest.atr || (latest.high - latest.low);
+            const tol = atrRef * 0.5;
+            if (latest.low <= priceMin + tol && (latest.rsi14 || 50) > rsiMin + 8) bullishDivergence = true;
+            if (latest.high >= priceMax - tol && (latest.rsi14 || 50) < rsiMax - 8) bearishDivergence = true;
         }
     }
 
@@ -270,6 +274,14 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const applyEarningsGate = (conf: 'HIGH' | 'MEDIUM' | 'LOW', reason: string): ['HIGH' | 'MEDIUM' | 'LOW', string] =>
         nearEarnings ? ['LOW', reason + ' ⚠️ Earnings Soon'] : [conf, reason];
 
+    // R:R gate: reject signals where risk/reward ratio is below 1.5
+    const meetsRR = (action: 'LONG' | 'SHORT', price: number, sl: number, tp: number): boolean => {
+        const risk   = Math.abs(price - sl);
+        const reward = Math.abs(tp - price);
+        if (risk <= 0) return true;
+        return reward / risk >= 1.5;
+    };
+
     // ── 1. LONG signals ────────────────────────────────────────────────────
     const hasBullishPattern = patterns.some(p => ['Bullish Engulfing', 'Hammer', 'Morning Star'].includes(p));
     const sentimentGateLong = sentimentLab !== 'Bearish';
@@ -286,7 +298,12 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             longConfidence = isGoldenCross ? 'HIGH' : 'MEDIUM';
         }
     } else {
-        const bbLowerHit = latest.bb?.lower ? latest.close <= latest.bb.lower : false;
+        // Bollinger bounce confirmation: prev bar touched/broke lower band AND
+        // latest bar closes back inside with bullish reversal — filters out
+        // "band riding" trends that keep closing on the lower band.
+        const bbLowerHit = latest.bb?.lower && prev.bb?.lower
+            ? (prev.low <= prev.bb.lower && latest.close > prev.close && latest.close > latest.bb.lower)
+            : false;
         const bullishSignals = [isOversold, macdBullish, bbLowerHit, hasBullishPattern, stochBullish,
             mode === 'scalp' ? ema9BullishCross : false].filter(Boolean).length;
 
@@ -313,7 +330,11 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         else if (volumeAboveAvg && !longReason.includes('Volume')) longReason += ' + Volume OK';
         const [conf, reason] = applyEarningsGate(longConfidence, longReason);
         const exits = calculateExits('LONG', latest.close, atr);
-        return { action: 'LONG', reason, confidence: conf, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+        if (!meetsRR('LONG', latest.close, exits.stopLoss, exits.takeProfit)) {
+            // Poor risk/reward — skip this signal
+        } else {
+            return { action: 'LONG', reason, confidence: conf, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+        }
     }
 
     // ── 2. SHORT signals ───────────────────────────────────────────────────
@@ -332,7 +353,10 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             shortConfidence = isDeathCross ? 'HIGH' : 'MEDIUM';
         }
     } else {
-        const bbUpperHit = latest.bb?.upper ? latest.close >= latest.bb.upper : false;
+        // Mirror of bullish: prev touched/broke upper band, latest reverses down
+        const bbUpperHit = latest.bb?.upper && prev.bb?.upper
+            ? (prev.high >= prev.bb.upper && latest.close < prev.close && latest.close < latest.bb.upper)
+            : false;
         const bearishSignals = [isOverbought, macdBearish, bbUpperHit, hasBearishPattern, stochBearish,
             mode === 'scalp' ? ema9BearishCross : false].filter(Boolean).length;
 
@@ -359,7 +383,11 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         else if (volumeAboveAvg && !shortReason.includes('Volume')) shortReason += ' + Volume OK';
         const [conf, reason] = applyEarningsGate(shortConfidence, shortReason);
         const exits = calculateExits('SHORT', latest.close, atr);
-        return { action: 'SHORT', reason, confidence: conf, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+        if (!meetsRR('SHORT', latest.close, exits.stopLoss, exits.takeProfit)) {
+            // Poor risk/reward — skip this signal
+        } else {
+            return { action: 'SHORT', reason, confidence: conf, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+        }
     }
 
     // ── 3. WAIT ────────────────────────────────────────────────────────────

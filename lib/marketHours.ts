@@ -1,5 +1,4 @@
 export type MarketSession = 'regular' | 'pre' | 'after' | 'always' | 'closed';
-export type BrokerMode = 'default' | 'trade_republic';
 
 export interface MarketStatus {
     isOpen: boolean;
@@ -9,18 +8,18 @@ export interface MarketStatus {
 }
 
 /**
- * Returns the current market status for a given symbol and category.
- * When broker is 'trade_republic', all non-crypto/forex assets use gettex
- * hours (7:30–23:00 CET, Mon–Fri) so the bot stays fully active during
- * Trade Republic trading hours — even for US stocks.
+ * Returns the current market status using the LONGEST available trading window
+ * for each symbol. For equities accessible via gettex (Trade Republic),
+ * automatically uses 7:30-23:00 CET when it provides more uptime than the
+ * native exchange. Crypto stays 24/7, Forex stays Mon-Fri 24h.
  */
-export function getMarketStatus(symbol: string, category?: string, broker: BrokerMode = 'default'): MarketStatus {
+export function getMarketStatus(symbol: string, category?: string): MarketStatus {
     // Crypto: always open
     if (category === 'Crypto' || symbol.includes('-USD') || symbol.includes('-EUR')) {
         return { isOpen: true, session: 'always', label: '24/7', exchange: 'CRYPTO' };
     }
 
-    // Forex: open Mon–Fri
+    // Forex: open Mon-Fri
     if (category === 'Forex' || symbol.endsWith('=X')) {
         const day = new Date().getUTCDay();
         const isWeekday = day >= 1 && day <= 5;
@@ -32,30 +31,26 @@ export function getMarketStatus(symbol: string, category?: string, broker: Broke
         };
     }
 
-    // Trade Republic mode: all equities/ETFs/indices use gettex hours
-    if (broker === 'trade_republic') {
-        return getGettexStatus();
-    }
+    // For all other assets: pick the exchange with the longest open window right now.
+    // gettex (7:30-23:00 CET) covers all equities/ETFs/indices available on Trade Republic.
+    const gettex = getGettexStatus();
+    const native = getNativeStatus(symbol);
 
-    // German / French exchanges
-    if (symbol.endsWith('.DE') || symbol.endsWith('.PA')) {
-        return getEuropeanStatus(symbol.endsWith('.DE') ? 'XETRA' : 'EURONEXT');
+    // If gettex is open and native is closed, prefer gettex (longer hours)
+    if (gettex.isOpen && !native.isOpen) return gettex;
+    // If both open, prefer the one with 'regular' session (faster polling)
+    if (gettex.isOpen && native.isOpen) {
+        return native.session === 'regular' ? native : gettex;
     }
+    // If native is open but gettex closed (shouldn't happen often), use native
+    if (native.isOpen) return native;
 
-    // London Stock Exchange
-    if (symbol.endsWith('.L')) {
-        return getLondonStatus();
-    }
-
-    // Default: US markets (stocks, ETFs, indices)
-    return getUSStatus();
+    // Both closed — return whichever has a more informative label
+    return native;
 }
 
 /**
  * Polling interval (ms) for a given market session.
- * - Always/regular: fast (2s) — live market
- * - Pre/after hours: medium (10s) — some price movement but slower
- * - Closed: slow (45s) — essentially cached, just keep data fresh
  */
 export function getPollInterval(session: MarketSession): number {
     switch (session) {
@@ -65,6 +60,16 @@ export function getPollInterval(session: MarketSession): number {
         case 'after': return 10_000;
         case 'closed': return 45_000;
     }
+}
+
+function getNativeStatus(symbol: string): MarketStatus {
+    if (symbol.endsWith('.DE') || symbol.endsWith('.PA')) {
+        return getEuropeanStatus(symbol.endsWith('.DE') ? 'XETRA' : 'EURONEXT');
+    }
+    if (symbol.endsWith('.L')) {
+        return getLondonStatus();
+    }
+    return getUSStatus();
 }
 
 function getUSStatus(): MarketStatus {
@@ -95,7 +100,6 @@ function getEuropeanStatus(exchange: string): MarketStatus {
     }
 
     const m = cet.getHours() * 60 + cet.getMinutes();
-    // 9:00–17:30 CET
     if (m >= 540 && m < 1050) {
         return { isOpen: true, session: 'regular', label: 'OPEN', exchange };
     }
@@ -113,7 +117,6 @@ function getLondonStatus(): MarketStatus {
     }
 
     const m = lon.getHours() * 60 + lon.getMinutes();
-    // 8:00–16:30 GMT/BST
     if (m >= 480 && m < 990) {
         return { isOpen: true, session: 'regular', label: 'OPEN', exchange: 'LSE' };
     }
@@ -121,8 +124,7 @@ function getLondonStatus(): MarketStatus {
     return { isOpen: false, session: 'closed', label: 'CLOSED', exchange: 'LSE' };
 }
 
-// gettex / LS Exchange — used by Trade Republic for all assets
-// Trading hours: Mon–Fri 7:30–23:00 CET
+// gettex / LS Exchange (Trade Republic): Mon-Fri 7:30-23:00 CET
 function getGettexStatus(): MarketStatus {
     const now = new Date();
     const cet = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
@@ -133,7 +135,6 @@ function getGettexStatus(): MarketStatus {
     }
 
     const m = cet.getHours() * 60 + cet.getMinutes();
-    // 7:30 = 450min, 23:00 = 1380min
     if (m >= 450 && m < 1380) {
         return { isOpen: true, session: 'regular', label: 'TR OPEN', exchange: 'gettex' };
     }

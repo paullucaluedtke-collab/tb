@@ -1,4 +1,5 @@
 export type MarketSession = 'regular' | 'pre' | 'after' | 'always' | 'closed';
+export type BrokerMode = 'default' | 'trade_republic';
 
 export interface MarketStatus {
     isOpen: boolean;
@@ -9,13 +10,11 @@ export interface MarketStatus {
 
 /**
  * Returns the current market status for a given symbol and category.
- * - Crypto: always open (24/7)
- * - Forex: Mon–Fri (any timezone, always open during weekdays)
- * - .DE / .PA: XETRA / Euronext — 9:00–17:30 CET
- * - .L: LSE — 8:00–16:30 GMT
- * - Everything else: NYSE/NASDAQ with pre- and after-hours
+ * When broker is 'trade_republic', all non-crypto/forex assets use gettex
+ * hours (7:30–23:00 CET, Mon–Fri) so the bot stays fully active during
+ * Trade Republic trading hours — even for US stocks.
  */
-export function getMarketStatus(symbol: string, category?: string): MarketStatus {
+export function getMarketStatus(symbol: string, category?: string, broker: BrokerMode = 'default'): MarketStatus {
     // Crypto: always open
     if (category === 'Crypto' || symbol.includes('-USD') || symbol.includes('-EUR')) {
         return { isOpen: true, session: 'always', label: '24/7', exchange: 'CRYPTO' };
@@ -31,6 +30,11 @@ export function getMarketStatus(symbol: string, category?: string): MarketStatus
             label: isWeekday ? 'OPEN' : 'CLOSED',
             exchange: 'FX',
         };
+    }
+
+    // Trade Republic mode: all equities/ETFs/indices use gettex hours
+    if (broker === 'trade_republic') {
+        return getGettexStatus();
     }
 
     // German / French exchanges
@@ -115,4 +119,24 @@ function getLondonStatus(): MarketStatus {
     }
 
     return { isOpen: false, session: 'closed', label: 'CLOSED', exchange: 'LSE' };
+}
+
+// gettex / LS Exchange — used by Trade Republic for all assets
+// Trading hours: Mon–Fri 7:30–23:00 CET
+function getGettexStatus(): MarketStatus {
+    const now = new Date();
+    const cet = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Berlin' }));
+    const day = cet.getDay();
+
+    if (day === 0 || day === 6) {
+        return { isOpen: false, session: 'closed', label: 'CLOSED', exchange: 'gettex' };
+    }
+
+    const m = cet.getHours() * 60 + cet.getMinutes();
+    // 7:30 = 450min, 23:00 = 1380min
+    if (m >= 450 && m < 1380) {
+        return { isOpen: true, session: 'regular', label: 'TR OPEN', exchange: 'gettex' };
+    }
+
+    return { isOpen: false, session: 'closed', label: 'TR CLOSED', exchange: 'gettex' };
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Asset } from '@/config/assets';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import { StockDataPoint } from '@/lib/technical-analysis';
-import { getMarketStatus, getPollInterval } from '@/lib/marketHours';
+import { getMarketStatus, getPollInterval, BrokerMode } from '@/lib/marketHours';
 
 // Types (Moved from page.tsx or shared)
 export interface StockData {
@@ -45,7 +45,8 @@ export const useMarketData = (
     selectedSymbol: string,
     watchlist: Asset[],
     activeCategory: string,
-    mode: 'swing' | 'scalp' | 'long_term' = 'swing'
+    mode: 'swing' | 'scalp' | 'long_term' = 'swing',
+    broker: BrokerMode = 'default'
 ) => {
     // State
     const [stockData, setStockData] = useState<StockData | null>(null);
@@ -151,7 +152,7 @@ export const useMarketData = (
         priceInterval = setInterval(() => {
             if (document.hidden) return;
             const asset = watchlist.find(a => a.symbol === selectedSymbol);
-            const session = getMarketStatus(selectedSymbol, asset?.category).session;
+            const session = getMarketStatus(selectedSymbol, asset?.category, broker).session;
             const gap = getPollInterval(session);
             const now = Date.now();
             if (now - lastPricePollRef.current < gap) return;
@@ -168,7 +169,7 @@ export const useMarketData = (
             clearInterval(priceInterval);
             clearInterval(newsInterval);
         };
-    }, [selectedSymbol, mode]);
+    }, [selectedSymbol, mode, broker]);
 
 
     // DEBUG: Track renders

@@ -19,7 +19,7 @@ import { useSignalHistory } from '@/hooks/useSignalHistory';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { useSignalAccuracy } from '@/hooks/useSignalAccuracy';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
-import { getMarketStatus } from '@/lib/marketHours';
+import { getMarketStatus, BrokerMode } from '@/lib/marketHours';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import {
@@ -197,9 +197,10 @@ export default function Home() {
   const [sortOption, setSortOption] = useState<SortOption>('Combined');
   const [searchQuery, setSearchQuery] = useState('');
   const [mode, setMode] = useState<'swing' | 'scalp' | 'long_term'>('swing');
+  const [broker, setBroker] = useState<BrokerMode>('trade_republic');
 
   // Use Custom Hook for Data Fetching
-  const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated, triggerAiAnalysis, multiTimeframe, fetchMultiTimeframe } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
+  const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated, triggerAiAnalysis, multiTimeframe, fetchMultiTimeframe } = useMarketData(selectedSymbol, watchlist, activeCategory, mode, broker);
 
   // Alerts + Follow system
   const { followedSymbols, isFollowed, toggleFollow, toasts, dismissToast, alertHistory, clearHistory, notifPermission, requestPermission } = useAlerts(summaries);
@@ -209,7 +210,7 @@ export default function Home() {
   const { getDuration } = useSignalHistory(summaries);
 
   // Signal accuracy tracker (30-day rolling win rate)
-  const { stats: accuracyStats, reset: resetAccuracy } = useSignalAccuracy(summaries);
+  const { stats: accuracyStats, recentTrades, reset: resetAccuracy } = useSignalAccuracy(summaries);
 
   // Price alerts
   const { alerts: priceAlerts, triggered: triggeredAlerts, addAlert: addPriceAlert, removeAlert: removePriceAlert, toggleAlert: togglePriceAlert, clearTriggered: clearTriggeredAlert, alertsForSymbol } = usePriceAlerts(summaries, notifPermission);
@@ -242,9 +243,9 @@ export default function Home() {
   const currentMarketStatus = useMemo(() => {
     if (!mounted) return null;
     const asset = watchlist.find(a => a.symbol === selectedSymbol);
-    return getMarketStatus(selectedSymbol, asset?.category);
+    return getMarketStatus(selectedSymbol, asset?.category, broker);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, selectedSymbol, watchlist, marketTick]);
+  }, [mounted, selectedSymbol, watchlist, marketTick, broker]);
 
   // Translation State
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
@@ -268,13 +269,16 @@ export default function Home() {
     const savedLang = localStorage.getItem('sb_lang') as 'en' | 'de' | null;
     const savedMode = localStorage.getItem('sb_mode') as 'swing' | 'scalp' | 'long_term' | null;
     const savedSort = localStorage.getItem('sb_sort') as SortOption | null;
+    const savedBroker = localStorage.getItem('sb_broker') as BrokerMode | null;
     if (savedLang) setLang(savedLang);
     if (savedMode) setMode(savedMode);
     if (savedSort) setSortOption(savedSort);
+    if (savedBroker) setBroker(savedBroker);
   }, []);
   useEffect(() => { localStorage.setItem('sb_lang', lang); }, [lang]);
   useEffect(() => { localStorage.setItem('sb_mode', mode); }, [mode]);
   useEffect(() => { localStorage.setItem('sb_sort', sortOption); }, [sortOption]);
+  useEffect(() => { localStorage.setItem('sb_broker', broker); }, [broker]);
 
   // Auto-fetch multi-timeframe when switching symbols (if panel is open and no cached data)
   useEffect(() => {
@@ -538,6 +542,17 @@ export default function Home() {
               className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'long_term' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
             >
               {t.mode.long_term}
+            </button>
+          </div>
+
+          {/* Broker Toggle */}
+          <div className={`flex items-center justify-between px-2 mt-3 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            <span className="text-[10px] uppercase tracking-widest font-bold text-gray-400">Broker</span>
+            <button
+              onClick={() => setBroker(b => b === 'default' ? 'trade_republic' : 'default')}
+              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all ${broker === 'trade_republic' ? 'bg-purple-600 text-white shadow' : (darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500')}`}
+            >
+              {broker === 'trade_republic' ? 'Trade Republic' : 'Default'}
             </button>
           </div>
 
@@ -1009,11 +1024,13 @@ export default function Home() {
                 hasNews={!!newsData?.news && newsData.news.length > 0}
               />
 
-              {/* Signal Accuracy — rolling 30-day win rate across tracked signals */}
+              {/* Signal Tracking — rolling 30-day win rate + TP/SL monitoring + trade log */}
               <SignalAccuracyPanel
                 stats={accuracyStats}
+                recentTrades={recentTrades}
                 onReset={resetAccuracy}
                 lang={lang}
+                darkMode={darkMode}
               />
 
               {/* About Section */}

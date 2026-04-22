@@ -6,10 +6,10 @@ import { calculateIndicators } from '@/lib/technical-analysis';
 import { getTradeSignal, analyzeSentiment } from '@/lib/analysis';
 import { getSharedSentiment } from '@/lib/sentimentCache';
 
-// Per-symbol analysis cache - heavy work (chart fetch + indicators) should not run per user per minute
+// Per-symbol analysis cache — reduced to 60s so signals stay fresh intraday
 const analysisCache = new LRUCache<string, any>({
     max: 500,
-    ttl: 5 * 60 * 1000, // 5 minutes
+    ttl: 60 * 1000, // 60 seconds
 });
 
 export async function POST(request: Request) {
@@ -56,6 +56,20 @@ export async function POST(request: Request) {
                         results[symbol] = { error: 'Insufficient data' };
                         return;
                     }
+
+                    // Fetch current quote to update the last candle with live price
+                    try {
+                        const liveQuotes = await yahooFinance.quote(symbol);
+                        const livePrice = (liveQuotes as any)?.postMarketPrice
+                            || (liveQuotes as any)?.preMarketPrice
+                            || (liveQuotes as any)?.regularMarketPrice;
+                        if (livePrice && quotes.length > 0) {
+                            const last = quotes[quotes.length - 1];
+                            last.close = livePrice;
+                            last.high = Math.max(last.high ?? livePrice, livePrice);
+                            last.low = Math.min(last.low ?? livePrice, livePrice);
+                        }
+                    } catch { }
 
                     const enrichedData = calculateIndicators(quotes);
                     // Use shared sentiment cache (primed by /api/news/[symbol]) instead of

@@ -46,10 +46,21 @@ export async function GET(
     }
 
     try {
-        const queryOptions = { period1: '2023-01-01', interval: '1d' as const }; // Fetch enough data for SMA200
+        // Fetch daily candles for long-term indicators (SMA200 etc.)
+        const dailyOptions = { period1: '2023-01-01', interval: '1d' as const };
+        const dailyResult = await yahooFinance.chart(symbol, dailyOptions);
 
-        // Fetch Chart Data (Critical)
-        const chartResult = await yahooFinance.chart(symbol, queryOptions);
+        // Also fetch recent 1h candles for intraday signal freshness
+        const intradayStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        let intradayQuotes: any[] = [];
+        try {
+            const intradayResult = await yahooFinance.chart(symbol, { period1: intradayStart, interval: '1h' as const });
+            intradayQuotes = intradayResult?.quotes?.filter((q: any) => q.close !== null && q.date !== null) || [];
+        } catch { }
+
+        // Merge: use daily candles as base, then replace the last day's candle
+        // with the most recent intraday candle so indicators reflect current price
+        const chartResult = dailyResult;
 
         // Sentiment (cached 5min) - avoid hitting Yahoo search every call
         let sentimentLabel: 'Bullish' | 'Bearish' | 'Neutral' = sentimentCache.get(symbol) || 'Neutral';
@@ -83,6 +94,19 @@ export async function GET(
 
         if (!quotes || quotes.length === 0) {
             return NextResponse.json({ error: 'No data found' }, { status: 404 });
+        }
+
+        // If we have intraday data, update the last daily candle with the latest
+        // intraday close so signals reflect the current price, not yesterday's close
+        if (intradayQuotes.length > 0) {
+            const latestIntraday = intradayQuotes[intradayQuotes.length - 1];
+            const lastDaily = quotes[quotes.length - 1];
+            if (latestIntraday && lastDaily) {
+                lastDaily.close = latestIntraday.close;
+                lastDaily.high = Math.max(lastDaily.high ?? 0, latestIntraday.high ?? 0);
+                lastDaily.low = Math.min(lastDaily.low ?? Infinity, latestIntraday.low ?? Infinity);
+                lastDaily.volume = latestIntraday.volume || lastDaily.volume;
+            }
         }
 
         const enrichedData = calculateIndicators(quotes);

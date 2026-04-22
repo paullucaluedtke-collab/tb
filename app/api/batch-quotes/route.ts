@@ -29,12 +29,16 @@ export async function POST(request: Request) {
         const results = await yahooFinance.quote(symbols);
 
         // Map to a lightweight format for the frontend
+        // Use the most current price available: post-market > pre-market > regular
         const formattedQuotes = results.map((q: any) => {
+            const price = q.postMarketPrice || q.preMarketPrice || q.regularMarketPrice;
+            const change = q.postMarketChange ?? q.preMarketChange ?? q.regularMarketChange;
+            const changePct = q.postMarketChangePercent ?? q.preMarketChangePercent ?? q.regularMarketChangePercent;
             return {
                 symbol: q.symbol,
-                price: q.regularMarketPrice || q.postMarketPrice || q.preMarketPrice,
-                change: q.regularMarketChange,
-                changePercent: q.regularMarketChangePercent,
+                price,
+                change,
+                changePercent: changePct,
                 fiftyTwoWeekHigh: q.fiftyTwoWeekHigh,
                 fiftyTwoWeekLow: q.fiftyTwoWeekLow,
                 marketCap: q.marketCap,

@@ -54,7 +54,7 @@ export default function PositionCalculator({
             `Entry: ${formatPrice(entryPrice)}`,
             stopLoss ? `Stop Loss: ${formatPrice(stopLoss)}` : '',
             takeProfit ? `Take Profit: ${formatPrice(takeProfit)}` : '',
-            stopLoss && takeProfit ? `R:R: 1:${(Math.abs(takeProfit - entryPrice) / Math.abs(entryPrice - stopLoss)).toFixed(1)}` : '',
+            stopLoss && takeProfit && Math.abs(entryPrice - stopLoss) > 0 ? `R:R: 1:${(Math.abs(takeProfit - entryPrice) / Math.abs(entryPrice - stopLoss)).toFixed(1)}` : '',
             `Reason: ${reason}`,
             shares > 0 ? `\nPosition: ${shares} shares ($${positionSize.toLocaleString()})` : '',
             shares > 0 ? `Risk: $${riskAmount.toFixed(0)} (${riskPct}% of $${account.toLocaleString()})` : '',

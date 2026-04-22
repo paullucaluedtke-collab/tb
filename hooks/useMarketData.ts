@@ -90,14 +90,17 @@ export const useMarketData = (
                 // Cache only valid stock data
                 cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], stock: data };
 
-                // Cheap change detection: compare only the latest candle timestamp + close
                 setStockData(prev => {
                     if (!prev) return data;
                     const prevLast = prev.data[prev.data.length - 1];
                     const newLast = data.data[data.data.length - 1];
                     if (prevLast?.date === newLast?.date &&
                         prevLast?.close === newLast?.close &&
-                        prev.data.length === data.data.length) {
+                        prevLast?.high === newLast?.high &&
+                        prevLast?.low === newLast?.low &&
+                        prev.data.length === data.data.length &&
+                        prev.recommendation?.action === data.recommendation?.action &&
+                        prev.recommendation?.confidence === data.recommendation?.confidence) {
                         return prev;
                     }
                     return data;
@@ -390,7 +393,7 @@ export const useMarketData = (
         loading,
         aiLoading,
         error,
-        lastUpdated: stockData ? new Date() : null,
+        lastUpdated: stockData ? new Date(stockData.latest?.date || Date.now()) : null,
         triggerAiAnalysis,
         multiTimeframe,
         fetchMultiTimeframe,

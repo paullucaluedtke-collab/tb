@@ -371,7 +371,7 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         }
     } else {
         // Bollinger bounce: prev touched upper band, latest reverses below middle band
-        const bbMidShort = latest.bb?.middle || Infinity;
+        const bbMidShort = latest.bb?.middle ?? latest.close;
         const bbUpperHit = latest.bb?.upper && prev.bb?.upper
             ? (prev.high >= prev.bb.upper && latest.close < prev.close && latest.close < bbMidShort)
             : false;

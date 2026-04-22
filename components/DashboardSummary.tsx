@@ -41,7 +41,7 @@ export default function DashboardSummary({ assets, summaries, onPick, lang }: Pr
                 else if (action === 'SHORT') highShort.push({ symbol: asset.symbol, changePercent: s.changePercent });
             }
 
-            if (s.unusualVolume && s.unusualVolume >= 2) {
+            if (s.unusualVolume && isFinite(s.unusualVolume) && s.unusualVolume >= 2) {
                 unusualVol.push({ symbol: asset.symbol, ratio: s.unusualVolume, changePercent: s.changePercent });
             }
         }

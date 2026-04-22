@@ -156,27 +156,26 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const ema50v = latest.ema50 || 0;
     const hasSma200 = sma200 > 0 && data.length >= 200;
 
+    // Short-term EMA trend — always available, used as fallback
+    const emaUptrend   = latest.close > ema21v && ema9v > ema21v;
+    const emaDowntrend = latest.close < ema21v && ema9v < ema21v;
+
     if (mode === 'scalp') {
-        isUptrend   = latest.close > ema21v && ema9v > ema21v;
-        isDowntrend = latest.close < ema21v && ema9v < ema21v;
+        isUptrend   = emaUptrend;
+        isDowntrend = emaDowntrend;
         trendReason = 'Uptrend (EMA Aligned)';
     } else if (mode === 'swing') {
-        if (hasSma200) {
-            isUptrend   = latest.close > sma50 && sma50 > sma200;
-            isDowntrend = latest.close < sma50 && sma50 < sma200;
-        } else {
-            isUptrend   = latest.close > sma50 && latest.close > ema21v;
-            isDowntrend = latest.close < sma50 && latest.close < ema21v;
-        }
-        trendReason = 'Uptrend (MA Alignment)';
+        // Strong: MA stack aligned. Weak fallback: short-term EMA trend.
+        const strongUp   = hasSma200 ? (latest.close > sma50 && sma50 > sma200) : (latest.close > sma50);
+        const strongDown = hasSma200 ? (latest.close < sma50 && sma50 < sma200) : (latest.close < sma50);
+        isUptrend   = strongUp   || emaUptrend;
+        isDowntrend = strongDown || emaDowntrend;
+        trendReason = strongUp ? 'Uptrend (MA Alignment)' : 'Uptrend (EMA Aligned)';
     } else {
-        if (hasSma200) {
-            isUptrend   = latest.close > sma50 && sma50 > sma200;
-            isDowntrend = latest.close < sma50 && sma50 < sma200;
-        } else {
-            isUptrend   = latest.close > sma50;
-            isDowntrend = latest.close < sma50;
-        }
+        const strongUp   = hasSma200 ? (latest.close > sma50 && sma50 > sma200) : (latest.close > sma50);
+        const strongDown = hasSma200 ? (latest.close < sma50 && sma50 < sma200) : (latest.close < sma50);
+        isUptrend   = strongUp;
+        isDowntrend = strongDown;
         trendReason = 'Secular Uptrend (SMA50 > SMA200)';
     }
 

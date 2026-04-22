@@ -7,7 +7,7 @@ export type SentimentLabel = 'Bullish' | 'Bearish' | 'Neutral';
 // its own sentiment lookup and the batch route defaulting to 'Neutral'.
 export const sharedSentimentCache = new LRUCache<string, SentimentLabel>({
     max: 500,
-    ttl: 5 * 60 * 1000, // 5 minutes
+    ttl: 3 * 60 * 1000, // 3 minutes
 });
 
 export const getSharedSentiment = (symbol: string): SentimentLabel =>

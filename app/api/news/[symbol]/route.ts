@@ -8,10 +8,9 @@ import { setSharedSentiment } from '@/lib/sentimentCache';
 
 import { ASSETS } from '@/config/assets';
 
-// News rarely changes - aggressive cache saves Yahoo search calls (very expensive)
 const newsCache = new LRUCache<string, any>({
     max: 200,
-    ttl: 5 * 60 * 1000, // 5 minutes
+    ttl: 2 * 60 * 1000, // 2 minutes — fast enough for breaking news
 });
 
 const TRUSTED_PUBLISHERS = [

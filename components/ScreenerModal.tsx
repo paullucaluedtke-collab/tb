@@ -31,7 +31,7 @@ const CONFIDENCE_SCORE: Record<string, number> = { HIGH: 3, MEDIUM: 2, LOW: 1 };
 
 export default function ScreenerModal({ assets, summaries, onPick, onClose }: Props) {
     const [actionFilter, setActionFilter] = useState<'ALL' | 'LONG' | 'SHORT'>('ALL');
-    const [confidenceFilter, setConfidenceFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('HIGH');
+    const [confidenceFilter, setConfidenceFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
     const [categoryFilter, setCategoryFilter] = useState<'All' | 'Stock' | 'Crypto' | 'Index' | 'Forex'>('All');
     const [query, setQuery] = useState('');
     const [sortBy, setSortBy] = useState<'confidence' | 'change' | 'rs'>('confidence');

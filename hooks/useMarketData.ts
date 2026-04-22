@@ -319,7 +319,17 @@ export const useMarketData = (
                     setSummaries(prev => {
                         const next = { ...prev };
                         Object.entries(json.data).forEach(([symbol, data]: [string, any]) => {
-                            if (data.error) return;
+                            if (data.error) {
+                                // Don't leave symbols stuck on "Loading..." — give them a WAIT
+                                if (!next[symbol]?.recommendation || next[symbol]?.recommendation?.reason === 'Loading...') {
+                                    next[symbol] = {
+                                        ...next[symbol],
+                                        recommendation: { action: 'WAIT', confidence: 'LOW', reason: data.error === 'Insufficient data' ? 'Not enough data' : 'Analysis unavailable' },
+                                        sentiment: next[symbol]?.sentiment || { score: 0, label: 'Neutral', summary: '' }
+                                    };
+                                }
+                                return;
+                            }
                             next[symbol] = {
                                 ...next[symbol],
                                 price: data.latestClose || next[symbol]?.price,
@@ -335,10 +345,9 @@ export const useMarketData = (
                 // console.warn("Deep fetch failed", e);
             }
 
-            // News Sentiment Sync - Batch it to avoid hammering
+            // News Sentiment Sync — fetch 15 at a time, rotating through the watchlist
             const targetAssets = activeCategory === 'All' ? watchlist : watchlist.filter(a => a.category === activeCategory);
-            // Only sync top 5 visibly to save API calls
-            const assetsToFetch = targetAssets.slice(0, 5);
+            const assetsToFetch = targetAssets.slice(0, 15);
 
             for (const asset of assetsToFetch) {
                 if (!isMounted) break;

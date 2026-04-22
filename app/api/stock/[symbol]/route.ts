@@ -19,10 +19,10 @@ const profileCache = new LRUCache<string, any>({
     ttl: 6 * 60 * 60 * 1000, // 6 hours (profile rarely changes)
 });
 
-// Cache for earnings/calendar events — changes ~quarterly
+// Cache for earnings/calendar events
 const calendarCache = new LRUCache<string, any>({
     max: 200,
-    ttl: 12 * 60 * 60 * 1000, // 12 hours
+    ttl: 6 * 60 * 60 * 1000, // 6 hours
 });
 
 // Sentiment uses shared cache (lib/sentimentCache) so news route can prime it

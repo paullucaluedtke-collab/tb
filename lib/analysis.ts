@@ -99,6 +99,7 @@ export interface TradeRecommendation {
     stopLoss?: number;
     takeProfit?: number;
     signalStatus?: 'CONFIRMED' | 'FORMING';
+    horizon?: 'short' | 'medium' | 'long'; // Expected signal duration
 }
 
 export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' | 'long_term' = 'swing', sentimentLab: 'Bullish' | 'Bearish' | 'Neutral' = 'Neutral', nextEarnings?: string | null): TradeRecommendation => {
@@ -163,6 +164,11 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     if (mode === 'scalp') {
         isUptrend   = emaUptrend;
         isDowntrend = emaDowntrend;
+        // Last resort for scalp: pure EMA9 vs EMA21 direction
+        if (!isUptrend && !isDowntrend && ema9v > 0 && ema21v > 0) {
+            isUptrend   = ema9v > ema21v;
+            isDowntrend = ema9v < ema21v;
+        }
         trendReason = 'Uptrend (EMA Aligned)';
     } else if (mode === 'swing') {
         // Strong: MA stack aligned. Weak fallback: short-term EMA trend.
@@ -171,11 +177,23 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         isUptrend   = strongUp   || emaUptrend;
         isDowntrend = strongDown || emaDowntrend;
         trendReason = strongUp ? 'Uptrend (MA Alignment)' : 'Uptrend (EMA Aligned)';
+        // Last resort: when MA stack is ambiguous (grey zone) AND EMA alignment is also mixed,
+        // fall back to pure EMA9 vs EMA21 direction so no stock is permanently stuck at WAIT.
+        if (!isUptrend && !isDowntrend && ema9v > 0 && ema21v > 0) {
+            isUptrend   = ema9v > ema21v;
+            isDowntrend = ema9v < ema21v;
+            trendReason = isUptrend ? 'EMA Momentum Bullish' : 'EMA Momentum Bearish';
+        }
     } else {
         const strongUp   = hasSma200 ? (latest.close > sma50 && sma50 > sma200) : (latest.close > sma50);
         const strongDown = hasSma200 ? (latest.close < sma50 && sma50 < sma200) : (latest.close < sma50);
         isUptrend   = strongUp;
         isDowntrend = strongDown;
+        // Long-term grey zone: fall back to SMA50 alone
+        if (!isUptrend && !isDowntrend) {
+            isUptrend   = latest.close > sma50 && sma50 > 0;
+            isDowntrend = latest.close < sma50 && sma50 > 0;
+        }
         trendReason = 'Secular Uptrend (SMA50 > SMA200)';
     }
 
@@ -355,15 +373,17 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             longConfidence = getConfidence(bullishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bullTrendAligned);
         }
 
-        // Trend-following: uptrend + EMA9 > EMA21, only block when RSI is truly extreme (>82)
-        if (!longTriggered && isUptrend && bullTrendAligned && rsi < 82 && sentimentGateLong) {
+        // Trend-following: fire whenever isUptrend, RSI not yet overbought.
+        // bullTrendAligned (EMA9 > EMA21) upgrades confidence but is NOT a hard gate —
+        // pullbacks in uptrends are valid LONG setups at lower confidence.
+        if (!longTriggered && isUptrend && rsi < 80 && sentimentGateLong) {
             longTriggered = true;
-            longReason = 'Trend Continuation (EMA Aligned)';
+            longReason = bullTrendAligned ? 'Trend Continuation (EMA Aligned)' : 'Pullback in Uptrend';
             if (macdBullishAligned) longReason += ' + MACD Positive';
             if (trendIsStrong) longReason += ' + ADX Strong';
             if (pullbackToBullMA) longReason += ' + MA Pullback';
             if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
-            longConfidence = (trendIsStrong && macdBullishAligned) ? 'MEDIUM' : 'LOW';
+            longConfidence = (trendIsStrong && macdBullishAligned && bullTrendAligned) ? 'MEDIUM' : 'LOW';
         }
     }
 
@@ -377,8 +397,12 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         if (volumeSpike) longReason += ' + Volume Spike';
         else if (volumeAboveAvg && !longReason.includes('Volume')) longReason += ' + Volume OK';
         const exits = calculateExits('LONG', latest.close, atr);
+        const horizon: TradeRecommendation['horizon'] =
+            mode === 'scalp' ? 'short' :
+            mode === 'long_term' ? 'long' :
+            (isGoldenCross || longReason.includes('SMA200')) ? 'long' : 'medium';
         if (meetsRR(latest.close, exits.stopLoss, exits.takeProfit)) {
-            return { action: 'LONG', reason: longReason, confidence: longConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+            return { action: 'LONG', reason: longReason, confidence: longConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', horizon, ...exits };
         }
     }
 
@@ -429,15 +453,17 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             shortConfidence = getConfidence(bearishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bearTrendAligned);
         }
 
-        // Trend-following: downtrend + EMA9 < EMA21, only block when RSI is truly extreme (<18)
-        if (!shortTriggered && isDowntrend && bearTrendAligned && rsi > 18 && sentimentGateShort) {
+        // Trend-following: fire whenever isDowntrend, RSI not yet oversold.
+        // bearTrendAligned (EMA9 < EMA21) upgrades confidence but is NOT a hard gate —
+        // bounces in downtrends are valid SHORT setups at lower confidence.
+        if (!shortTriggered && isDowntrend && rsi > 20 && sentimentGateShort) {
             shortTriggered = true;
-            shortReason = 'Trend Continuation Down (EMA Aligned)';
+            shortReason = bearTrendAligned ? 'Trend Continuation Down (EMA Aligned)' : 'Bounce in Downtrend';
             if (macdBearishAligned) shortReason += ' + MACD Negative';
             if (trendIsStrong) shortReason += ' + ADX Strong';
             if (pullbackToBearMA) shortReason += ' + MA Pullback';
             if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
-            shortConfidence = (trendIsStrong && macdBearishAligned) ? 'MEDIUM' : 'LOW';
+            shortConfidence = (trendIsStrong && macdBearishAligned && bearTrendAligned) ? 'MEDIUM' : 'LOW';
         }
     }
 
@@ -452,8 +478,12 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         if (volumeSpike) shortReason += ' + Volume Spike';
         else if (volumeAboveAvg && !shortReason.includes('Volume')) shortReason += ' + Volume OK';
         const exits = calculateExits('SHORT', latest.close, atr);
+        const horizon: TradeRecommendation['horizon'] =
+            mode === 'scalp' ? 'short' :
+            mode === 'long_term' ? 'long' :
+            (isDeathCross || shortReason.includes('SMA200')) ? 'long' : 'medium';
         if (meetsRR(latest.close, exits.stopLoss, exits.takeProfit)) {
-            return { action: 'SHORT', reason: shortReason, confidence: shortConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+            return { action: 'SHORT', reason: shortReason, confidence: shortConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', horizon, ...exits };
         }
     }
 

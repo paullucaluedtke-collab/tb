@@ -36,9 +36,12 @@ export interface NewsResponse {
 
 export interface AIResult {
     score: number;
+    action?: 'BUY' | 'SELL' | 'WAIT';
     summary: string;
     reasoning: string;
-    newsHash?: string; // To track if news changed
+    timing?: string;
+    risks?: string;
+    newsHash?: string;
 }
 
 export const useMarketData = (

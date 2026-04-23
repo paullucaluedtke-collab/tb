@@ -13,18 +13,23 @@ interface DeepAnalysisCardProps {
 
 interface AIResult {
     score: number;
+    action?: 'BUY' | 'SELL' | 'WAIT';
     summary: string;
     reasoning: string;
+    timing?: string;
+    risks?: string;
 }
 
 export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading, onAnalyze, hasNews }: DeepAnalysisCardProps) {
     const t = {
-        title: lang === 'de' ? 'KI Tiefen-Analyse' : 'AI Deep Analysis',
+        title: lang === 'de' ? 'KI Trade-Analyse' : 'AI Trade Analysis',
         button: lang === 'de' ? 'Analyse starten' : 'Run Analysis',
         analyzing: lang === 'de' ? 'Lese Artikel...' : 'Reading articles...',
-        score: lang === 'de' ? 'KI Score' : 'AI Score',
-        reasoning: lang === 'de' ? 'Begründung' : 'Reasoning',
-        summary: lang === 'de' ? 'Zusammenfassung' : 'Summary',
+        score: lang === 'de' ? 'Einstiegs-Qualität' : 'Entry Quality',
+        reasoning: lang === 'de' ? 'Faktoren' : 'Key Factors',
+        summary: lang === 'de' ? 'Einschätzung' : 'Assessment',
+        timing: lang === 'de' ? 'Timing' : 'Entry Timing',
+        risks: lang === 'de' ? 'Risiken' : 'Risks',
         power: lang === 'de' ? 'Powered by Anthropic Claude Sonnet' : 'Powered by Anthropic Claude Sonnet',
         noNews: lang === 'de' ? 'Keine News verfügbar für Analyse' : 'No news available for analysis',
         rerun: lang === 'de' ? 'Erneut analysieren' : 'Re-analyze',
@@ -89,17 +94,44 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
             {/* Result state */}
             {result && !loading && (
                 <div className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="flex items-end gap-3 mb-4">
-                        <span className={`text-5xl font-black ${getScoreColor(result.score)} drop-shadow-lg`}>
-                            {result.score}<span className="text-2xl text-indigo-300/50">/10</span>
-                        </span>
-                        <span className="text-indigo-200 font-medium mb-1.5">{t.score}</span>
+                    <div className="flex items-center gap-4 mb-4">
+                        <div className="flex items-end gap-2">
+                            <span className={`text-5xl font-black ${getScoreColor(result.score)} drop-shadow-lg`}>
+                                {result.score}<span className="text-2xl text-indigo-300/50">/10</span>
+                            </span>
+                            <span className="text-indigo-200 font-medium mb-1.5 text-sm">{t.score}</span>
+                        </div>
+                        {result.action && (
+                            <span className={`px-4 py-1.5 rounded-full text-sm font-black tracking-wide ${
+                                result.action === 'BUY' ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                : result.action === 'SELL' ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                : 'bg-gray-500/20 text-gray-300 border border-gray-500/30'
+                            }`}>
+                                {result.action === 'BUY' ? (lang === 'de' ? 'KAUFEN' : 'BUY')
+                                : result.action === 'SELL' ? (lang === 'de' ? 'VERKAUFEN' : 'SELL')
+                                : (lang === 'de' ? 'WARTEN' : 'WAIT')}
+                            </span>
+                        )}
                     </div>
 
-                    <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 mb-4 border border-white/10">
+                    <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 mb-3 border border-white/10">
                         <h4 className="text-xs font-bold text-indigo-300 uppercase mb-2">{t.summary}</h4>
                         <p className="text-sm leading-relaxed text-slate-100">{result.summary}</p>
                     </div>
+
+                    {result.timing && (
+                        <div className="bg-emerald-500/10 backdrop-blur-md rounded-xl p-4 mb-3 border border-emerald-500/20">
+                            <h4 className="text-xs font-bold text-emerald-400 uppercase mb-2">{t.timing}</h4>
+                            <p className="text-sm leading-relaxed text-slate-100">{result.timing}</p>
+                        </div>
+                    )}
+
+                    {result.risks && (
+                        <div className="bg-red-500/10 backdrop-blur-md rounded-xl p-4 mb-3 border border-red-500/20">
+                            <h4 className="text-xs font-bold text-red-400 uppercase mb-2">{t.risks}</h4>
+                            <p className="text-sm leading-relaxed text-slate-200">{result.risks}</p>
+                        </div>
+                    )}
 
                     <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/5">
                         <h4 className="text-xs font-bold text-indigo-300 uppercase mb-2">{t.reasoning}</h4>

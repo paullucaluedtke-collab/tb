@@ -373,24 +373,42 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             longConfidence = getConfidence(bullishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bullTrendAligned);
         }
 
-        // Trend-following: fire whenever isUptrend, RSI not yet overbought.
-        // bullTrendAligned (EMA9 > EMA21) upgrades confidence but is NOT a hard gate —
-        // pullbacks in uptrends are valid LONG setups at lower confidence.
-        if (!longTriggered && isUptrend && rsi < 80 && sentimentGateLong) {
+        // Tier B: Trend continuation — requires EMA alignment + at least one momentum factor.
+        // This avoids low-quality "just in uptrend" signals that dilute win rate.
+        if (!longTriggered && isUptrend && bullTrendAligned && rsi < 75 && sentimentGateLong) {
+            const momentumOK = macdBullishAligned
+                || (adxValue !== undefined && adxValue > 22)
+                || volumeSpike
+                || hasBullishPattern
+                || stochBullish || stochOversold;
+            if (momentumOK) {
+                longTriggered = true;
+                longReason = 'Trend Continuation (EMA Aligned)';
+                if (macdBullishAligned) longReason += ' + MACD Positive';
+                if (adxValue && adxValue > 22) longReason += ' + ADX Trending';
+                if (pullbackToBullMA) longReason += ' + MA Pullback';
+                if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
+                longConfidence = (macdBullishAligned && (adxValue && adxValue > 22)) ? 'MEDIUM' : 'LOW';
+            }
+        }
+
+        // Tier C: Oversold extreme — high-probability reversal, fires regardless of EMA alignment
+        if (!longTriggered && isOversold && sentimentGateLong) {
             longTriggered = true;
-            longReason = bullTrendAligned ? 'Trend Continuation (EMA Aligned)' : 'Pullback in Uptrend';
+            longReason = isUptrend ? 'Oversold in Uptrend' : 'RSI Oversold Reversal';
+            if (bullishDivergence) longReason += ' + Bullish Divergence';
             if (macdBullishAligned) longReason += ' + MACD Positive';
-            if (trendIsStrong) longReason += ' + ADX Strong';
-            if (pullbackToBullMA) longReason += ' + MA Pullback';
-            if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
-            longConfidence = (trendIsStrong && macdBullishAligned && bullTrendAligned) ? 'MEDIUM' : 'LOW';
+            if (stochOversold) longReason += ' + Stoch Oversold';
+            longConfidence = (isUptrend || bullishDivergence) ? 'MEDIUM' : 'LOW';
         }
     }
 
+    // Tier D: Bullish divergence — historically high win rate reversal signal
     if (!longTriggered && bullishDivergence && sentimentGateLong && mode !== 'long_term') {
         longTriggered = true;
         longReason = 'Bullish RSI Divergence';
-        longConfidence = volumeAboveAvg ? 'MEDIUM' : 'LOW';
+        if (isUptrend) longReason += ' + In Uptrend';
+        longConfidence = (isUptrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
     }
 
     if (longTriggered) {
@@ -453,25 +471,41 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             shortConfidence = getConfidence(bearishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bearTrendAligned);
         }
 
-        // Trend-following: fire whenever isDowntrend, RSI not yet oversold.
-        // bearTrendAligned (EMA9 < EMA21) upgrades confidence but is NOT a hard gate —
-        // bounces in downtrends are valid SHORT setups at lower confidence.
-        if (!shortTriggered && isDowntrend && rsi > 20 && sentimentGateShort) {
+        // Tier B: Trend continuation — requires EMA alignment + at least one momentum factor.
+        if (!shortTriggered && isDowntrend && bearTrendAligned && rsi > 25 && sentimentGateShort) {
+            const momentumOK = macdBearishAligned
+                || (adxValue !== undefined && adxValue > 22)
+                || volumeSpike
+                || hasBearishPattern
+                || stochBearish || stochOverbought;
+            if (momentumOK) {
+                shortTriggered = true;
+                shortReason = 'Trend Continuation Down (EMA Aligned)';
+                if (macdBearishAligned) shortReason += ' + MACD Negative';
+                if (adxValue && adxValue > 22) shortReason += ' + ADX Trending';
+                if (pullbackToBearMA) shortReason += ' + MA Pullback';
+                if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
+                shortConfidence = (macdBearishAligned && (adxValue && adxValue > 22)) ? 'MEDIUM' : 'LOW';
+            }
+        }
+
+        // Tier C: Overbought extreme — high-probability reversal, fires regardless of EMA alignment
+        if (!shortTriggered && isOverbought && sentimentGateShort) {
             shortTriggered = true;
-            shortReason = bearTrendAligned ? 'Trend Continuation Down (EMA Aligned)' : 'Bounce in Downtrend';
+            shortReason = isDowntrend ? 'Overbought in Downtrend' : 'RSI Overbought Reversal';
+            if (bearishDivergence) shortReason += ' + Bearish Divergence';
             if (macdBearishAligned) shortReason += ' + MACD Negative';
-            if (trendIsStrong) shortReason += ' + ADX Strong';
-            if (pullbackToBearMA) shortReason += ' + MA Pullback';
-            if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
-            shortConfidence = (trendIsStrong && macdBearishAligned && bearTrendAligned) ? 'MEDIUM' : 'LOW';
+            if (stochOverbought) shortReason += ' + Stoch Overbought';
+            shortConfidence = (isDowntrend || bearishDivergence) ? 'MEDIUM' : 'LOW';
         }
     }
 
-    // Divergence only fires if NOT in a clear uptrend (avoids fading strong momentum)
+    // Tier D: Bearish divergence — only fires when NOT in a clear uptrend (avoids fading strong momentum)
     if (!shortTriggered && bearishDivergence && !isUptrend && sentimentGateShort && mode !== 'long_term') {
         shortTriggered = true;
         shortReason = 'Bearish RSI Divergence';
-        shortConfidence = volumeAboveAvg ? 'MEDIUM' : 'LOW';
+        if (isDowntrend) shortReason += ' + In Downtrend';
+        shortConfidence = (isDowntrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
     }
 
     if (shortTriggered) {

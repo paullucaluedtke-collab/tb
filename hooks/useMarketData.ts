@@ -36,12 +36,28 @@ export interface NewsResponse {
 
 export interface AIResult {
     score: number;
-    action?: 'BUY' | 'SELL' | 'WAIT';
+    action?: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'SELL' | 'WAIT';
     summary: string;
     reasoning: string;
     timing?: string;
     risks?: string;
+    keyLevels?: {
+        support: number | null;
+        resistance: number | null;
+        idealEntry: number | null;
+    };
+    positionAdvice?: string;
+    catalysts?: string;
+    conviction?: 'HIGH' | 'MEDIUM' | 'LOW';
     newsHash?: string;
+}
+
+export interface PositionInfo {
+    side: 'LONG' | 'SHORT';
+    entryPrice: number;
+    quantity: number;
+    pnlPercent: number;
+    holdingDays: number;
 }
 
 export const useMarketData = (
@@ -270,12 +286,61 @@ export const useMarketData = (
     const multiTimeframe = multiTimeframeMap[selectedSymbol] ?? null;
 
     // 2b. MANUAL AI ANALYSIS: Triggered by user clicking the analyze button
-    const triggerAiAnalysis = async (symbol?: string) => {
+    const triggerAiAnalysis = async (symbol?: string, positionInfo?: PositionInfo) => {
         const targetSymbol = symbol || selectedSymbol;
         if (!targetSymbol || !newsData?.news || newsData.news.length === 0) return;
 
-        const currentNews = newsData.news.slice(0, 3);
+        const currentNews = newsData.news.slice(0, 5);
         const newsHash = currentNews.map(n => n.uuid).join('|');
+
+        // Build technical context from current stock data
+        let technicals: any = undefined;
+        if (stockData && stockData.symbol === targetSymbol) {
+            const latest = stockData.latest;
+            const rec = stockData.recommendation;
+            if (latest) {
+                const macdVal = latest.macd;
+                let macdSignal: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+                if (macdVal && typeof macdVal === 'object' && 'MACD' in macdVal && 'signal' in macdVal) {
+                    const m = (macdVal as any).MACD as number | undefined;
+                    const s = (macdVal as any).signal as number | undefined;
+                    if (m != null && s != null) {
+                        macdSignal = m > s ? 'bullish' : m < s ? 'bearish' : 'neutral';
+                    }
+                }
+
+                let trend: 'uptrend' | 'downtrend' | 'sideways' = 'sideways';
+                if (latest.sma50 && latest.sma200) {
+                    if (latest.close > latest.sma50 && latest.sma50 > latest.sma200) trend = 'uptrend';
+                    else if (latest.close < latest.sma50 && latest.sma50 < latest.sma200) trend = 'downtrend';
+                }
+
+                const prevClose = stockData.data.length > 1 ? stockData.data[stockData.data.length - 2]?.close : latest.close;
+                const changePct = prevClose ? ((latest.close - prevClose) / prevClose) * 100 : 0;
+
+                let volumeDesc: string | undefined;
+                if (stockData.unusualVolume?.isUnusual) {
+                    volumeDesc = `UNUSUAL (${stockData.unusualVolume.ratio.toFixed(1)}x average)`;
+                } else if (latest.volumeSma20 && latest.volume) {
+                    const ratio = latest.volume / latest.volumeSma20;
+                    volumeDesc = ratio > 1.2 ? `Above average (${ratio.toFixed(1)}x)` : `Normal (${ratio.toFixed(1)}x)`;
+                }
+
+                technicals = {
+                    price: latest.close,
+                    change: changePct,
+                    rsi: latest.rsi14,
+                    macdSignal,
+                    trend,
+                    sma50: latest.sma50,
+                    sma200: latest.sma200,
+                    atr: latest.atr,
+                    volume: volumeDesc,
+                    stopLoss: rec?.stopLoss,
+                    takeProfit: rec?.takeProfit,
+                };
+            }
+        }
 
         setAiLoading(true);
         try {
@@ -284,7 +349,9 @@ export const useMarketData = (
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     symbol: targetSymbol,
-                    newsItems: currentNews.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
+                    newsItems: currentNews.map(n => ({ title: n.title, link: n.link, description: n.publisher })),
+                    position: positionInfo || undefined,
+                    technicals,
                 })
             });
 

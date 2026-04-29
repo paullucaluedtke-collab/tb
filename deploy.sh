@@ -11,5 +11,5 @@ docker compose build --no-cache
 docker compose up -d
 
 echo ""
-echo "✓ Deployed! App running at http://$(hostname -I | awk '{print $1}'):80"
+echo "Deployed! App running at http://$(hostname -I | awk '{print $1}'):80"
 echo "  Logs: docker compose logs -f app"

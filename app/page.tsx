@@ -18,6 +18,7 @@ import { useAlerts } from '@/hooks/useAlerts';
 import { useSignalHistory } from '@/hooks/useSignalHistory';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { useSignalAccuracy } from '@/hooks/useSignalAccuracy';
+import { usePaperTrades } from '@/hooks/usePaperTrades';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
 import { getMarketStatus } from '@/lib/marketHours';
 import { StockDataPoint } from '@/lib/technical-analysis';
@@ -218,6 +219,19 @@ export default function Home() {
   // Paper trades + screener modals
   const [showPaperTrades, setShowPaperTrades] = useState(false);
   const [showScreener, setShowScreener] = useState(false);
+  const { openTrades: paperOpenTrades } = usePaperTrades(summaries);
+
+  const activePositionForSymbol = useMemo(() => {
+    const trade = paperOpenTrades.find(t => t.symbol === selectedSymbol);
+    if (!trade) return null;
+    return {
+      side: trade.side,
+      entryPrice: trade.entryPrice,
+      quantity: trade.quantity,
+      pnlPercent: trade.pnlPct ?? 0,
+      holdingDays: Math.max(1, Math.round((Date.now() - trade.openedAt) / 86400000)),
+    };
+  }, [paperOpenTrades, selectedSymbol]);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(false);
@@ -992,8 +1006,9 @@ export default function Home() {
                 lang={lang}
                 result={aiInsights[selectedSymbol] || null}
                 loading={aiLoading}
-                onAnalyze={() => triggerAiAnalysis()}
+                onAnalyze={(posInfo?: any) => triggerAiAnalysis(undefined, posInfo || activePositionForSymbol || undefined)}
                 hasNews={!!newsData?.news && newsData.news.length > 0}
+                activePosition={activePositionForSymbol}
               />
 
               {/* Signal Tracking — rolling 30-day win rate + TP/SL monitoring + trade log */}

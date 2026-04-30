@@ -63,7 +63,7 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                     <ComposedChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis domain={['auto', 'auto']} />
+                        <YAxis domain={['auto', 'auto']} tickFormatter={(v) => String(v)} />
                         <Tooltip
                             labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')}
                             formatter={(value: any, name: any) => {
@@ -133,7 +133,7 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                     <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis domain={[0, 100]} ticks={[0, 30, 70, 100]} />
+                        <YAxis domain={[0, 100]} ticks={[0, 30, 70, 100]} tickFormatter={(v) => String(v)} />
                         <Tooltip labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')} />
                         <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "Overbought", position: "right", fill: "#ef4444", fontSize: 10 }} />
                         <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="3 3" label={{ value: "Oversold", position: "right", fill: "#22c55e", fontSize: 10 }} />
@@ -151,7 +151,7 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                     <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis domain={[0, 100]} ticks={[0, 20, 80, 100]} />
+                        <YAxis domain={[0, 100]} ticks={[0, 20, 80, 100]} tickFormatter={(v) => String(v)} />
                         <Tooltip labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')} />
                         <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "Overbought", position: "right", fill: "#ef4444", fontSize: 10 }} />
                         <ReferenceLine y={20} stroke="#22c55e" strokeDasharray="3 3" label={{ value: "Oversold", position: "right", fill: "#22c55e", fontSize: 10 }} />
@@ -170,7 +170,7 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                     <ComposedChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis />
+                        <YAxis tickFormatter={(v) => String(v)} />
                         <Tooltip labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')} />
                         <Legend />
                         <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />

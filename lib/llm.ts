@@ -34,7 +34,10 @@ IMPORTANT: Output ONLY valid JSON. No markdown code blocks. No introductory text
                     role: "user",
                     content: `Analyze the following news for "${symbol}".
 Consider: fundamental impact, short-term catalysts, risk factors, geopolitical exposure, and market positioning.
-Output valid JSON with keys: "score" (number 1-10), "summary" (max 2 sentences), "reasoning" (concise bullet points of key factors).
+Output valid JSON with EXACTLY these keys and types:
+- "score": number from 1 to 10
+- "summary": string (max 2 sentences, plain text, NOT an array or object)
+- "reasoning": string (a single string with bullet points separated by newlines, e.g. "• Factor 1\n• Factor 2". MUST be a string, NOT an array, NOT an object)
 
 News Text:
 ${text}${geoSection}`
@@ -53,10 +56,25 @@ ${text}${geoSection}`
         }
 
         const result = JSON.parse(jsonMatch[0]);
+
+        // Normalize: Claude sometimes returns arrays/objects for reasoning despite
+        // "string" instruction. Coerce everything to plain strings so the UI never crashes.
+        const toText = (v: any): string => {
+            if (v == null) return '';
+            if (typeof v === 'string') return v;
+            if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+            if (Array.isArray(v)) return v.map(toText).filter(Boolean).map(s => s.startsWith('•') || s.startsWith('-') ? s : `• ${s}`).join('\n');
+            if (typeof v === 'object') {
+                return Object.entries(v).map(([k, val]) => `• ${k}: ${toText(val)}`).join('\n');
+            }
+            return String(v);
+        };
+
+        const score = typeof result.score === 'number' ? result.score : parseFloat(result.score) || 5;
         return {
-            score: result.score || 5,
-            summary: result.summary || "Analysis failed.",
-            reasoning: result.reasoning || "No reasoning provided."
+            score: Math.max(0, Math.min(10, score)),
+            summary: toText(result.summary) || "Analysis failed.",
+            reasoning: toText(result.reasoning) || "No reasoning provided."
         };
 
     } catch (error: any) {

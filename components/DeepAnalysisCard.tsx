@@ -13,8 +13,30 @@ interface DeepAnalysisCardProps {
 
 interface AIResult {
     score: number;
-    summary: string;
-    reasoning: string;
+    summary: string | string[] | unknown;
+    reasoning: string | string[] | unknown;
+}
+
+// Defensive: coerce any shape (string / array / object / null) to a renderable string.
+// Prevents "Objects are not valid as a React child" crashes when the API ever returns
+// reasoning as an array or nested object instead of a plain string.
+function toDisplayText(v: unknown): string {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) {
+        return v
+            .map(toDisplayText)
+            .filter(Boolean)
+            .map(s => (s.trim().startsWith('•') || s.trim().startsWith('-') ? s : `• ${s}`))
+            .join('\n');
+    }
+    if (typeof v === 'object') {
+        return Object.entries(v as Record<string, unknown>)
+            .map(([k, val]) => `• ${k}: ${toDisplayText(val)}`)
+            .join('\n');
+    }
+    return String(v);
 }
 
 export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading, onAnalyze, hasNews }: DeepAnalysisCardProps) {
@@ -98,13 +120,13 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
 
                     <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 mb-4 border border-white/10">
                         <h4 className="text-xs font-bold text-indigo-300 uppercase mb-2">{t.summary}</h4>
-                        <p className="text-sm leading-relaxed text-slate-100">{result.summary}</p>
+                        <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toDisplayText(result.summary)}</p>
                     </div>
 
                     <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/5">
                         <h4 className="text-xs font-bold text-indigo-300 uppercase mb-2">{t.reasoning}</h4>
-                        <div className="text-xs leading-relaxed text-slate-300 space-y-1">
-                            {result.reasoning}
+                        <div className="text-xs leading-relaxed text-slate-300 space-y-1 whitespace-pre-line">
+                            {toDisplayText(result.reasoning)}
                         </div>
                     </div>
                 </div>

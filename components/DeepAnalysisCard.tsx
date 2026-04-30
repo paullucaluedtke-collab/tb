@@ -1,6 +1,7 @@
 'use client';
 
 import { Brain, Sparkles, Loader2, Play, TrendingUp, TrendingDown, Shield, Target, AlertTriangle, Zap } from 'lucide-react';
+import { formatPrice } from '@/lib/format';
 
 type AIAction = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'SELL' | 'WAIT';
 
@@ -164,7 +165,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                         <span className={`ml-2 font-bold ${activePosition.side === 'LONG' ? 'text-green-400' : 'text-red-400'}`}>
                             {activePosition.side}
                         </span>
-                        <span className="text-slate-400 ml-2">@ ${activePosition.entryPrice.toFixed(2)}</span>
+                        <span className="text-slate-400 ml-2">@ {formatPrice(activePosition.entryPrice, lang, { symbol })}</span>
                         <span className={`ml-2 font-bold ${activePosition.pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {activePosition.pnlPercent >= 0 ? '+' : ''}{activePosition.pnlPercent.toFixed(2)}%
                         </span>
@@ -249,19 +250,19 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                                 {result.keyLevels.support != null && (
                                     <div className="text-center">
                                         <p className="text-[10px] text-slate-400 uppercase">{t.support}</p>
-                                        <p className="text-sm font-bold text-green-400">${result.keyLevels.support.toFixed(2)}</p>
+                                        <p className="text-sm font-bold text-green-400">{formatPrice(result.keyLevels.support, lang, { symbol })}</p>
                                     </div>
                                 )}
                                 {result.keyLevels.resistance != null && (
                                     <div className="text-center">
                                         <p className="text-[10px] text-slate-400 uppercase">{t.resistance}</p>
-                                        <p className="text-sm font-bold text-red-400">${result.keyLevels.resistance.toFixed(2)}</p>
+                                        <p className="text-sm font-bold text-red-400">{formatPrice(result.keyLevels.resistance, lang, { symbol })}</p>
                                     </div>
                                 )}
                                 {result.keyLevels.idealEntry != null && (
                                     <div className="text-center">
                                         <p className="text-[10px] text-slate-400 uppercase">{t.idealEntry}</p>
-                                        <p className="text-sm font-bold text-yellow-400">${result.keyLevels.idealEntry.toFixed(2)}</p>
+                                        <p className="text-sm font-bold text-yellow-400">{formatPrice(result.keyLevels.idealEntry, lang, { symbol })}</p>
                                     </div>
                                 )}
                             </div>

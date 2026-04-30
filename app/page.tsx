@@ -149,19 +149,15 @@ const TRANSLATIONS = {
 
 import { useMarketData, StockData, NewsResponse } from '@/hooks/useMarketData';
 
-// Helper: Get currency for a symbol
-const getCurrencyForSymbol = (symbol: string): string => {
-  if (symbol.endsWith('.DE') || symbol.endsWith('.PA')) return 'EUR';
-  if (symbol.endsWith('.L')) return 'GBP';
-  if (symbol.endsWith('=X')) return ''; // Forex pairs
-  return 'USD';
-};
+import { resolveCurrency, localeFor } from '@/lib/format';
 
-// Helper: Format price with correct currency
-const formatPrice = (price: number, symbol: string, locale: string): string => {
-  const currency = getCurrencyForSymbol(symbol);
-  if (!currency) return price.toFixed(4); // Forex
-  return price.toLocaleString(locale, { style: 'currency', currency });
+// Helper: Format price with correct currency.
+// EUR for European market suffixes (.DE / .PA / etc.), otherwise lang-driven
+// (de → EUR, en → USD). Forex pairs render the raw rate.
+const formatPrice = (price: number, symbol: string, lang: 'en' | 'de'): string => {
+  if (symbol.endsWith('=X')) return price.toFixed(4);
+  const currency = resolveCurrency(lang, symbol);
+  return price.toLocaleString(localeFor(lang), { style: 'currency', currency });
 };
 
 
@@ -715,7 +711,7 @@ export default function Home() {
                 <span className={`text-xl font-mono font-medium tracking-tight
                            ${stockData.latest.close > stockData.latest.open ? 'text-green-600' : 'text-red-500'}
                        `}>
-                  {formatPrice(stockData.latest.close, selectedSymbol, locale)}
+                  {formatPrice(stockData.latest.close, selectedSymbol, lang)}
                 </span>
                 {summaries[selectedSymbol]?.changePercent !== undefined && (
                   <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${summaries[selectedSymbol].changePercent! >= 0
@@ -934,13 +930,13 @@ export default function Home() {
                       <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-red-900/20 border-red-900/40' : 'bg-red-50 border-red-100'}`}>
                         <span className="text-xs font-bold text-red-400 uppercase tracking-wide mb-1">{t.stopLoss}</span>
                         <span className={`text-base font-bold ${darkMode ? 'text-red-400' : 'text-red-700'}`}>
-                          {formatPrice(stockData.recommendation.stopLoss, selectedSymbol, locale)}
+                          {formatPrice(stockData.recommendation.stopLoss, selectedSymbol, lang)}
                         </span>
                       </div>
                       <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-green-900/20 border-green-900/40' : 'bg-green-50 border-green-100'}`}>
                         <span className="text-xs font-bold text-green-400 uppercase tracking-wide mb-1">{t.takeProfit}</span>
                         <span className={`text-base font-bold ${darkMode ? 'text-green-400' : 'text-green-700'}`}>
-                          {formatPrice(stockData.recommendation.takeProfit, selectedSymbol, locale)}
+                          {formatPrice(stockData.recommendation.takeProfit, selectedSymbol, lang)}
                         </span>
                       </div>
                       <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-indigo-900/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
@@ -996,6 +992,7 @@ export default function Home() {
                     onAdd={addPriceAlert}
                     onRemove={removePriceAlert}
                     onToggle={togglePriceAlert}
+                    lang={lang}
                   />
                 )}
               </div>
@@ -1133,7 +1130,7 @@ export default function Home() {
                 reason={stockData.recommendation.reason}
                 confidence={stockData.recommendation.confidence}
                 lang={lang}
-                formatPrice={(p: number) => formatPrice(p, selectedSymbol, locale)}
+                formatPrice={(p: number) => formatPrice(p, selectedSymbol, lang)}
               />
 
               {/* News Section */}
@@ -1166,6 +1163,7 @@ export default function Home() {
           summaries={summaries}
           watchlistSymbols={watchlist.map(a => a.symbol)}
           onClose={() => setShowPaperTrades(false)}
+          lang={lang}
         />
       )}
 
@@ -1176,6 +1174,7 @@ export default function Home() {
           summaries={summaries}
           onPick={(sym) => { setSelectedSymbol(sym); setShowMobileSidebar(false); }}
           onClose={() => setShowScreener(false)}
+          lang={lang}
         />
       )}
     </div>

@@ -3,16 +3,18 @@
 import { useState } from 'react';
 import { X, TrendingUp, TrendingDown, Plus, Trash2, DollarSign, Target } from 'lucide-react';
 import { usePaperTrades } from '@/hooks/usePaperTrades';
+import { cur, localeFor, type Lang } from '@/lib/format';
 
 interface Props {
     summaries: Record<string, { price: number }>;
     watchlistSymbols: string[];
     onClose: () => void;
+    lang?: Lang;
 }
 
-function formatMoney(n: number) {
+function formatMoney(n: number, lang: Lang = 'en', symbol?: string) {
     const sign = n >= 0 ? '+' : '';
-    return `${sign}$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+    return `${sign}${cur(lang, symbol)}${n.toLocaleString(localeFor(lang), { maximumFractionDigits: 2 })}`;
 }
 
 function formatPct(n: number) {
@@ -20,7 +22,9 @@ function formatPct(n: number) {
     return `${sign}${n.toFixed(2)}%`;
 }
 
-export default function PaperTradesPanel({ summaries, watchlistSymbols, onClose }: Props) {
+export default function PaperTradesPanel({ summaries, watchlistSymbols, onClose, lang = 'en' }: Props) {
+    const c = cur(lang);
+    const numLocale = localeFor(lang);
     const { openTrades, closedTrades, stats, openTrade, closeTrade, deleteTrade, clearAll } = usePaperTrades(summaries);
 
     const [showForm, setShowForm] = useState(false);
@@ -70,13 +74,13 @@ export default function PaperTradesPanel({ summaries, watchlistSymbols, onClose 
                     <div>
                         <div className="text-[10px] uppercase tracking-wide text-gray-400 font-bold">Total P&L</div>
                         <div className={`text-sm font-black ${stats.totalPnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                            {formatMoney(stats.totalPnl)}
+                            {formatMoney(stats.totalPnl, lang)}
                         </div>
                     </div>
                     <div>
                         <div className="text-[10px] uppercase tracking-wide text-gray-400 font-bold">Open P&L</div>
                         <div className={`text-sm font-black ${stats.openPnl >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                            {formatMoney(stats.openPnl)}
+                            {formatMoney(stats.openPnl, lang)}
                         </div>
                     </div>
                     <div>
@@ -230,14 +234,14 @@ export default function PaperTradesPanel({ summaries, watchlistSymbols, onClose 
                                                     {t.side}
                                                 </span>
                                                 <span className="text-[11px] text-gray-500">
-                                                    {t.quantity} @ ${t.entryPrice.toFixed(2)} → ${typeof t.currentPrice === 'number' ? t.currentPrice.toFixed(2) : '—'}
+                                                    {t.quantity} @ {cur(lang, t.symbol)}{t.entryPrice.toFixed(2)} → {typeof t.currentPrice === 'number' ? `${cur(lang, t.symbol)}${t.currentPrice.toFixed(2)}` : '—'}
                                                 </span>
                                             </div>
                                             {t.note && <p className="text-[11px] text-gray-400 truncate mt-0.5">{t.note}</p>}
                                         </div>
                                         <div className="text-right">
                                             <div className={`text-sm font-black ${(t.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                                {t.pnl !== null ? formatMoney(t.pnl) : '—'}
+                                                {t.pnl !== null ? formatMoney(t.pnl, lang, t.symbol) : '—'}
                                             </div>
                                             <div className={`text-[10px] font-bold ${(t.pnlPct ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                                                 {t.pnlPct !== null ? formatPct(t.pnlPct) : ''}
@@ -279,14 +283,14 @@ export default function PaperTradesPanel({ summaries, watchlistSymbols, onClose 
                                             <div className="flex items-center gap-2">
                                                 <span className="font-black text-sm text-gray-900 dark:text-gray-100">{t.symbol}</span>
                                                 <span className="text-[11px] text-gray-500">
-                                                    {t.quantity} @ ${t.entryPrice.toFixed(2)} → ${(t.closePrice ?? 0).toFixed(2)}
+                                                    {t.quantity} @ {cur(lang, t.symbol)}{t.entryPrice.toFixed(2)} → {cur(lang, t.symbol)}{(t.closePrice ?? 0).toFixed(2)}
                                                 </span>
                                             </div>
                                             {t.note && <p className="text-[11px] text-gray-400 truncate mt-0.5">{t.note}</p>}
                                         </div>
                                         <div className="text-right">
                                             <div className={`text-sm font-black ${(t.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                                {formatMoney(t.pnl ?? 0)}
+                                                {formatMoney(t.pnl ?? 0, lang, t.symbol)}
                                             </div>
                                             <div className={`text-[10px] font-bold ${(t.pnlPct ?? 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
                                                 {formatPct(t.pnlPct ?? 0)}

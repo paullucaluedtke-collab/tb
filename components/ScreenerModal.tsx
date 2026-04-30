@@ -5,6 +5,7 @@ import { X, Search, TrendingUp, TrendingDown, Minus, ArrowUpRight, Filter } from
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
 import { Asset } from '@/config/assets';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
+import { cur, type Lang } from '@/lib/format';
 
 type Summary = {
     price: number;
@@ -19,6 +20,7 @@ interface Props {
     summaries: Record<string, Summary>;
     onPick: (symbol: string) => void;
     onClose: () => void;
+    lang?: Lang;
 }
 
 const ACTION_COLORS: Record<string, string> = {
@@ -29,7 +31,7 @@ const ACTION_COLORS: Record<string, string> = {
 
 const CONFIDENCE_SCORE: Record<string, number> = { HIGH: 3, MEDIUM: 2, LOW: 1 };
 
-export default function ScreenerModal({ assets, summaries, onPick, onClose }: Props) {
+export default function ScreenerModal({ assets, summaries, onPick, onClose, lang = 'en' }: Props) {
     const [actionFilter, setActionFilter] = useState<'ALL' | 'LONG' | 'SHORT'>('ALL');
     const [confidenceFilter, setConfidenceFilter] = useState<'ALL' | 'HIGH' | 'MEDIUM'>('ALL');
     const [categoryFilter, setCategoryFilter] = useState<'All' | 'Stock' | 'Crypto' | 'Index' | 'Forex'>('All');
@@ -214,7 +216,7 @@ export default function ScreenerModal({ assets, summaries, onPick, onClose }: Pr
                                         </div>
                                         <div className="text-right">
                                             <div className="text-sm font-black text-gray-900 dark:text-gray-100">
-                                                ${r.summary.price?.toFixed(2)}
+                                                {cur(lang, r.asset.symbol)}{r.summary.price?.toFixed(2)}
                                             </div>
                                             {typeof chg === 'number' && (
                                                 <div className={`text-[11px] font-bold ${chg >= 0 ? 'text-green-600' : 'text-red-500'}`}>

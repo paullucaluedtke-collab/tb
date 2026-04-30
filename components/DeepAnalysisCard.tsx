@@ -23,19 +23,19 @@ interface DeepAnalysisCardProps {
 interface AIResult {
     score: number;
     action?: AIAction;
-    // Tolerant types: API may occasionally return arrays/objects despite asking
-    // for strings. The component coerces via toText() before rendering.
-    summary: string | unknown;
-    reasoning: string | unknown;
-    timing?: string | unknown;
-    risks?: string | unknown;
+    // API normalizes these to strings via toText() in llm.ts, but the component
+    // still defensively coerces in case of stale cached results.
+    summary: string;
+    reasoning: string;
+    timing?: string;
+    risks?: string;
     keyLevels?: {
         support: number | null;
         resistance: number | null;
         idealEntry: number | null;
     };
-    positionAdvice?: string | unknown;
-    catalysts?: string | unknown;
+    positionAdvice?: string;
+    catalysts?: string;
     conviction?: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 

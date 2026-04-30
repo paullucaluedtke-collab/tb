@@ -361,9 +361,43 @@ export const useMarketData = (
                     ...prev,
                     [targetSymbol]: { ...data, newsHash }
                 }));
+            } else {
+                // Surface server errors so user sees the issue instead of a silent reset
+                let errMsg = `Server error ${res.status}`;
+                try {
+                    const errJson = await res.json();
+                    errMsg = errJson.message || errJson.error || errMsg;
+                } catch (_) {}
+                console.error('[AI Analysis]', errMsg);
+                setAiInsights(prev => ({
+                    ...prev,
+                    [targetSymbol]: {
+                        score: 0,
+                        action: 'WAIT',
+                        summary: 'AI Analysis Failed.',
+                        reasoning: errMsg,
+                        timing: '',
+                        risks: '',
+                        conviction: 'LOW',
+                        newsHash,
+                    } as any,
+                }));
             }
-        } catch (e) {
-            // Analysis failed silently
+        } catch (e: any) {
+            console.error('[AI Analysis] Network error:', e);
+            setAiInsights(prev => ({
+                ...prev,
+                [targetSymbol]: {
+                    score: 0,
+                    action: 'WAIT',
+                    summary: 'AI Analysis Failed.',
+                    reasoning: e?.message || 'Network error contacting analysis service.',
+                    timing: '',
+                    risks: '',
+                    conviction: 'LOW',
+                    newsHash,
+                } as any,
+            }));
         } finally {
             setAiLoading(false);
         }

@@ -23,17 +23,19 @@ interface DeepAnalysisCardProps {
 interface AIResult {
     score: number;
     action?: AIAction;
-    summary: string;
-    reasoning: string;
-    timing?: string;
-    risks?: string;
+    // Tolerant types: API may occasionally return arrays/objects despite asking
+    // for strings. The component coerces via toText() before rendering.
+    summary: string | unknown;
+    reasoning: string | unknown;
+    timing?: string | unknown;
+    risks?: string | unknown;
     keyLevels?: {
         support: number | null;
         resistance: number | null;
         idealEntry: number | null;
     };
-    positionAdvice?: string;
-    catalysts?: string;
+    positionAdvice?: string | unknown;
+    catalysts?: string | unknown;
     conviction?: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
@@ -96,7 +98,28 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
 
     const actionCfg = result?.action ? ACTION_CONFIG[result.action] || ACTION_CONFIG.WAIT : null;
 
-    const formatReasoning = (text: string) => {
+    // Defensive: coerce any shape (string / array / object) to renderable text.
+    // Prevents "c.split is not a function" / "Objects are not valid as a React child"
+    // when the API ever returns reasoning as an array or nested object.
+    const toText = (v: unknown): string => {
+        if (v == null) return '';
+        if (typeof v === 'string') return v;
+        if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+        if (Array.isArray(v)) {
+            return v.map(toText).filter(Boolean)
+                .map(s => (s.trim().startsWith('•') || s.trim().startsWith('-') ? s : `• ${s}`))
+                .join('\n');
+        }
+        if (typeof v === 'object') {
+            return Object.entries(v as Record<string, unknown>)
+                .map(([k, val]) => `• ${k}: ${toText(val)}`).join('\n');
+        }
+        return String(v);
+    };
+
+    const formatReasoning = (input: unknown) => {
+        const text = toText(input);
+        if (!text) return null;
         const lines = text.split(/\n|•|·|—|- /).filter(l => l.trim());
         if (lines.length <= 1) return <p className="text-xs leading-relaxed text-slate-300">{text}</p>;
         return (
@@ -203,7 +226,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                     {/* Summary */}
                     <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/10">
                         <h4 className="text-xs font-bold text-indigo-300 uppercase mb-2">{t.summary}</h4>
-                        <p className="text-sm leading-relaxed text-slate-100">{result.summary}</p>
+                        <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.summary)}</p>
                     </div>
 
                     {/* Position Advice (only when invested) */}
@@ -212,7 +235,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                             <h4 className="text-xs font-bold text-blue-400 uppercase mb-2 flex items-center gap-1.5">
                                 <Shield size={12} /> {t.posAdvice}
                             </h4>
-                            <p className="text-sm leading-relaxed text-slate-100">{result.positionAdvice}</p>
+                            <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.positionAdvice)}</p>
                         </div>
                     )}
 
@@ -249,7 +272,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                     {result.timing && (
                         <div className="bg-emerald-500/10 backdrop-blur-md rounded-xl p-4 border border-emerald-500/20">
                             <h4 className="text-xs font-bold text-emerald-400 uppercase mb-2">{t.timing}</h4>
-                            <p className="text-sm leading-relaxed text-slate-100">{result.timing}</p>
+                            <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.timing)}</p>
                         </div>
                     )}
 
@@ -259,7 +282,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                             <h4 className="text-xs font-bold text-purple-400 uppercase mb-2 flex items-center gap-1.5">
                                 <Zap size={12} /> {t.catalysts}
                             </h4>
-                            <p className="text-sm leading-relaxed text-slate-100">{result.catalysts}</p>
+                            <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.catalysts)}</p>
                         </div>
                     )}
 
@@ -269,7 +292,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                             <h4 className="text-xs font-bold text-red-400 uppercase mb-2 flex items-center gap-1.5">
                                 <AlertTriangle size={12} /> {t.risks}
                             </h4>
-                            <p className="text-sm leading-relaxed text-slate-200">{result.risks}</p>
+                            <p className="text-sm leading-relaxed text-slate-200 whitespace-pre-line">{toText(result.risks)}</p>
                         </div>
                     )}
 

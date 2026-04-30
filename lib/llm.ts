@@ -167,23 +167,50 @@ ${text}${geoSection}`;
 
         const result = JSON.parse(jsonMatch[0]);
         const validActions: AIAction[] = ['STRONG_BUY', 'BUY', 'HOLD', 'SCALE_IN', 'TRIM', 'SELL', 'WAIT'];
-        const parsedAction = (result.action || '').toUpperCase();
+        const parsedAction = String(result.action || '').toUpperCase();
+
+        // Defensive: Claude sometimes returns arrays/objects despite "string" instruction.
+        // Coerce everything to plain strings so the UI never crashes with
+        // "Objects are not valid as a React child".
+        const toText = (v: any): string => {
+            if (v == null) return '';
+            if (typeof v === 'string') return v;
+            if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+            if (Array.isArray(v)) {
+                return v.map(toText).filter(Boolean)
+                    .map(s => (s.trim().startsWith('•') || s.trim().startsWith('-') ? s : `• ${s}`))
+                    .join('\n');
+            }
+            if (typeof v === 'object') {
+                return Object.entries(v).map(([k, val]) => `• ${k}: ${toText(val)}`).join('\n');
+            }
+            return String(v);
+        };
+        const toNumOrNull = (v: any): number | null => {
+            if (v == null) return null;
+            const n = typeof v === 'number' ? v : parseFloat(v);
+            return Number.isFinite(n) ? n : null;
+        };
+
+        const scoreNum = typeof result.score === 'number' ? result.score : parseFloat(result.score) || 5;
 
         return {
-            score: Math.max(0, Math.min(10, result.score || 5)),
+            score: Math.max(0, Math.min(10, scoreNum)),
             action: validActions.includes(parsedAction as AIAction) ? parsedAction as AIAction : 'WAIT',
-            summary: result.summary || "Analysis completed.",
-            reasoning: result.reasoning || "No reasoning provided.",
-            timing: result.timing || "",
-            risks: result.risks || "",
-            keyLevels: result.keyLevels ? {
-                support: result.keyLevels.support ?? null,
-                resistance: result.keyLevels.resistance ?? null,
-                idealEntry: result.keyLevels.idealEntry ?? null,
+            summary: toText(result.summary) || "Analysis completed.",
+            reasoning: toText(result.reasoning) || "No reasoning provided.",
+            timing: toText(result.timing),
+            risks: toText(result.risks),
+            keyLevels: result.keyLevels && typeof result.keyLevels === 'object' ? {
+                support: toNumOrNull(result.keyLevels.support),
+                resistance: toNumOrNull(result.keyLevels.resistance),
+                idealEntry: toNumOrNull(result.keyLevels.idealEntry),
             } : undefined,
-            positionAdvice: result.positionAdvice || undefined,
-            catalysts: result.catalysts || undefined,
-            conviction: ['HIGH', 'MEDIUM', 'LOW'].includes(result.conviction) ? result.conviction : 'MEDIUM',
+            positionAdvice: result.positionAdvice ? toText(result.positionAdvice) : undefined,
+            catalysts: result.catalysts ? toText(result.catalysts) : undefined,
+            conviction: ['HIGH', 'MEDIUM', 'LOW'].includes(String(result.conviction).toUpperCase())
+                ? String(result.conviction).toUpperCase() as 'HIGH' | 'MEDIUM' | 'LOW'
+                : 'MEDIUM',
         };
 
     } catch (error: any) {

@@ -54,15 +54,16 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
     return (
         <div className="space-y-4 md:space-y-8">
             {/* Price, SMA & Bollinger Bands Chart */}
-            <div className="h-72 md:h-96 w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
+            <div className="w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
                 <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0 dark:text-gray-100">
                     {mode === 'scalp' ? 'Price & EMA 9/21' : 'Price, SMA & Bollinger Bands'}
                 </h3>
+                <div className="h-72 md:h-96 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis domain={['auto', 'auto']} />
+                        <YAxis domain={['auto', 'auto']} tickFormatter={(v) => String(v)} />
                         <Tooltip
                             labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')}
                             formatter={(value: any, name: any) => {
@@ -93,11 +94,13 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                         )}
                     </ComposedChart>
                 </ResponsiveContainer>
+                </div>
             </div>
 
             {/* Volume Chart */}
-            <div className="h-32 md:h-40 w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
+            <div className="w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
                 <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0 dark:text-gray-100">Volume</h3>
+                <div className="h-32 md:h-40 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={volumeData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -106,7 +109,7 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                             if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
                             if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
                             if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
-                            return v;
+                            return String(v);
                         }} />
                         <Tooltip
                             labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')}
@@ -119,32 +122,36 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                         <Line type="monotone" dataKey="volumeSma20" stroke="#f59e0b" dot={false} strokeWidth={1.5} name="Vol SMA 20" />
                     </ComposedChart>
                 </ResponsiveContainer>
+                </div>
             </div>
 
             {/* RSI Chart */}
-            <div className="h-40 md:h-48 w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
+            <div className="w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
                 <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0 dark:text-gray-100">RSI (14)</h3>
+                <div className="h-40 md:h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis domain={[0, 100]} ticks={[0, 30, 70, 100]} />
+                        <YAxis domain={[0, 100]} ticks={[0, 30, 70, 100]} tickFormatter={(v) => String(v)} />
                         <Tooltip labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')} />
                         <ReferenceLine y={70} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "Overbought", position: "right", fill: "#ef4444", fontSize: 10 }} />
                         <ReferenceLine y={30} stroke="#22c55e" strokeDasharray="3 3" label={{ value: "Oversold", position: "right", fill: "#22c55e", fontSize: 10 }} />
                         <Line type="monotone" dataKey="rsi14" stroke="#8884d8" dot={false} strokeWidth={2} name="RSI" />
                     </LineChart>
                 </ResponsiveContainer>
+                </div>
             </div>
 
             {/* Stochastic RSI Chart */}
-            <div className="h-40 md:h-48 w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
+            <div className="w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
                 <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0 dark:text-gray-100">Stochastic RSI</h3>
+                <div className="h-40 md:h-48 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis domain={[0, 100]} ticks={[0, 20, 80, 100]} />
+                        <YAxis domain={[0, 100]} ticks={[0, 20, 80, 100]} tickFormatter={(v) => String(v)} />
                         <Tooltip labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')} />
                         <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="3 3" label={{ value: "Overbought", position: "right", fill: "#ef4444", fontSize: 10 }} />
                         <ReferenceLine y={20} stroke="#22c55e" strokeDasharray="3 3" label={{ value: "Oversold", position: "right", fill: "#22c55e", fontSize: 10 }} />
@@ -152,16 +159,18 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                         <Line type="monotone" dataKey="stochD" stroke="#ef4444" dot={false} strokeWidth={1.5} name="%D" />
                     </LineChart>
                 </ResponsiveContainer>
+                </div>
             </div>
 
             {/* MACD Chart */}
-            <div className="h-48 md:h-64 w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
+            <div className="w-full p-0 sm:p-2 md:p-4 bg-white dark:bg-gray-800 rounded-lg">
                 <h3 className="text-base md:text-lg font-bold mb-2 md:mb-4 px-2 sm:px-0 dark:text-gray-100">MACD</h3>
+                <div className="h-48 md:h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData}>
                         <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
                         <XAxis dataKey="date" tickFormatter={(date) => format(new Date(date), 'MMM dd')} minTickGap={30} />
-                        <YAxis />
+                        <YAxis tickFormatter={(v) => String(v)} />
                         <Tooltip labelFormatter={(date) => format(new Date(date), 'MMM dd, yyyy')} />
                         <Legend />
                         <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="3 3" />
@@ -170,6 +179,7 @@ const StockChart = ({ data, mode = 'swing' }: StockChartProps) => {
                         <Line type="monotone" dataKey="macdSignal" stroke="#ef4444" dot={false} name="Signal" />
                     </ComposedChart>
                 </ResponsiveContainer>
+                </div>
             </div>
         </div>
     );

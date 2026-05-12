@@ -257,8 +257,14 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const bearTrendAligned = ema9v < ema21v;
 
     // ── Price closing above/below key level ─────────────────────────────
-    const closeAboveSma50 = latest.close > sma50 && prev.close <= (prev.sma50 || sma50);
-    const closeBelowSma50 = latest.close < sma50 && prev.close >= (prev.sma50 || sma50);
+    // Breakouts WITHOUT volume confirmation are the #1 source of false signals.
+    // We require either a clear volume bump (≥ 1.1x average) OR no volume data
+    // at all (fail-open). Wide-range candles also count as confirmation.
+    const volumeOk = !hasVolData || volumeAboveAvg;
+    const wideRangeBar = (latest.high - latest.low) >= atrRef * 0.8;
+    const breakoutConfirm = volumeOk || wideRangeBar;
+    const closeAboveSma50 = latest.close > sma50 && prev.close <= (prev.sma50 || sma50) && breakoutConfirm;
+    const closeBelowSma50 = latest.close < sma50 && prev.close >= (prev.sma50 || sma50) && breakoutConfirm;
 
     // ── RSI Divergence (timing-aligned, ATR-adaptive) ────────────────────
     let bullishDivergence = false;
@@ -293,12 +299,20 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const volumeAboveAvg = hasVolData && latest.volume > (latest.volumeSma20 || 0);
     const volumeSpike    = hasVolData && latest.volume > (latest.volumeSma20 || 0) * 1.8;
 
-    // ── Earnings gate: BLOCK signals within 2 days of earnings ───────────
+    // ── Earnings gate: BLOCK signals 3 days before / 1 day after earnings ──
+    // Pre-earnings IV crush and post-earnings gaps both shred technical signals.
     if (nextEarnings) {
         const daysUntil = Math.ceil((new Date(nextEarnings).getTime() - Date.now()) / 86_400_000);
-        if (daysUntil >= 0 && daysUntil <= 2) {
-            return { action: 'WAIT', reason: 'Earnings within 2 days', confidence: 'LOW', patterns };
+        if (daysUntil >= -1 && daysUntil <= 3) {
+            return { action: 'WAIT', reason: 'Earnings window (-1d / +3d) — high gap risk', confidence: 'LOW', patterns };
         }
+    }
+
+    // ── Volatility gate: skip extreme regimes where ATR% > 7%. ──────────────
+    // Hyper-volatile names whipsaw both directions; technical setups fail there.
+    const atrPct = (atrRef / latest.close) * 100;
+    if (atrPct > 7 && mode !== 'scalp') {
+        return { action: 'WAIT', reason: `Extreme volatility (ATR ${atrPct.toFixed(1)}%) — unreliable signals`, confidence: 'LOW', patterns };
     }
 
     // ── ATR-based exits — pure multipliers guarantee consistent R:R ──────
@@ -318,18 +332,25 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         return 'LOW';
     };
 
-    // R:R gate: reject signals where risk/reward < 1.3 or risk is zero
+    // R:R gate. Scalps need looser cutoff (more frequent, smaller moves);
+    // swing/long-term must clear ≥ 1.6 — institutional minimum that beats commissions
+    // and survives reasonable slippage. Statistically, signals with R:R 1.3-1.5
+    // need ≥58% win rate to break even, which is rare in practice.
+    const minRR = mode === 'scalp' ? 1.4 : 1.6;
     const meetsRR = (price: number, sl: number, tp: number): boolean => {
         const risk   = Math.abs(price - sl);
         const reward = Math.abs(tp - price);
         if (risk <= 0) return false;
-        return reward / risk >= 1.3;
+        return reward / risk >= minRR;
     };
 
     // ── 1. LONG signals ──────────────────────────────────────────────────
     const hasBullishPattern = patterns.some(p =>
         ['Bullish Engulfing', 'Hammer', 'Morning Star', 'Three White Soldiers'].includes(p));
     const sentimentGateLong = sentimentLab !== 'Bearish';
+    // Hard block: do NOT take LONGs while a bearish RSI divergence is active.
+    // Top-formation divergence is one of the most reliable mean-reversion signals.
+    const longBlockedByDivergence = bearishDivergence && !isOversold;
 
     let longTriggered = false;
     let longReason = trendReason;
@@ -359,7 +380,7 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             mode === 'scalp' ? ema9BullishCross : false,
         ].filter(Boolean).length;
 
-        if (isUptrend && bullishSignals >= 2 && sentimentGateLong) {
+        if (isUptrend && bullishSignals >= 2 && sentimentGateLong && !longBlockedByDivergence) {
             longTriggered = true;
             if (isOversold) longReason += ' + RSI Oversold';
             if (macdBullish) longReason += macdBullishCross ? ' + MACD Bullish Cross' : ' + MACD Momentum';
@@ -373,47 +394,84 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             longConfidence = getConfidence(bullishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bullTrendAligned);
         }
 
-        // Tier B: Trend continuation — requires EMA alignment + at least one momentum factor.
-        // This avoids low-quality "just in uptrend" signals that dilute win rate.
-        if (!longTriggered && isUptrend && bullTrendAligned && rsi < 75 && sentimentGateLong) {
-            const momentumOK = macdBullishAligned
-                || (adxValue !== undefined && adxValue > 22)
-                || volumeSpike
-                || hasBullishPattern
-                || stochBullish || stochOversold;
-            if (momentumOK) {
+        // Tier B: Trend continuation — strict gating to lift win rate.
+        // Require EMA alignment AND a *trending* market (ADX>18) AND ≥1 momentum factor.
+        // Pure trend-only entries without a fresh momentum trigger are the lowest
+        // win-rate bucket in backtests — we keep them only when both ADX and MACD agree.
+        if (!longTriggered && isUptrend && bullTrendAligned && rsi < 72 && sentimentGateLong && !longBlockedByDivergence) {
+            const adxTrending = adxValue !== undefined && adxValue > 18;
+            const momentumFactors = [
+                macdBullishAligned,
+                volumeSpike,
+                hasBullishPattern,
+                stochBullish || stochOversold,
+                pullbackToBullMA,
+            ].filter(Boolean).length;
+            // Need trending ADX + at least one momentum factor, OR two momentum factors without ADX
+            const qualifies = (adxTrending && momentumFactors >= 1) || momentumFactors >= 2;
+            if (qualifies) {
                 longTriggered = true;
                 longReason = 'Trend Continuation (EMA Aligned)';
                 if (macdBullishAligned) longReason += ' + MACD Positive';
-                if (adxValue && adxValue > 22) longReason += ' + ADX Trending';
+                if (adxTrending) longReason += ' + ADX Trending';
                 if (pullbackToBullMA) longReason += ' + MA Pullback';
                 if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
-                longConfidence = (macdBullishAligned && (adxValue && adxValue > 22)) ? 'MEDIUM' : 'LOW';
+                longConfidence = (macdBullishAligned && adxTrending && momentumFactors >= 2) ? 'MEDIUM' : 'LOW';
             }
         }
 
-        // Tier C: Oversold extreme — high-probability reversal, fires regardless of EMA alignment
+        // Tier C: Oversold mean reversion — requires CONFIRMATION to fire counter-trend.
+        // Plain RSI<32 is famous for generating "falling knife" longs. We now demand
+        // either bullish divergence, OR a bullish candle / MACD turn / stoch cross.
         if (!longTriggered && isOversold && sentimentGateLong) {
-            longTriggered = true;
-            longReason = isUptrend ? 'Oversold in Uptrend' : 'RSI Oversold Reversal';
-            if (bullishDivergence) longReason += ' + Bullish Divergence';
-            if (macdBullishAligned) longReason += ' + MACD Positive';
-            if (stochOversold) longReason += ' + Stoch Oversold';
-            longConfidence = (isUptrend || bullishDivergence) ? 'MEDIUM' : 'LOW';
+            const reversalConfirm = bullishDivergence
+                || macdBullishAligned
+                || hasBullishPattern
+                || stochBullish
+                || (latest.close > prev.close && latest.close > latest.open); // bullish close after extreme RSI
+            const adxBlocksReversal = adxValue !== undefined && adxValue > 30 && !isUptrend; // strong downtrend → don't fade
+            if (reversalConfirm && !adxBlocksReversal) {
+                longTriggered = true;
+                longReason = isUptrend ? 'Oversold in Uptrend' : 'RSI Oversold Reversal';
+                if (bullishDivergence) longReason += ' + Bullish Divergence';
+                if (macdBullishAligned) longReason += ' + MACD Positive';
+                if (stochOversold) longReason += ' + Stoch Oversold';
+                if (hasBullishPattern) longReason += ' + ' + patterns.join(', ');
+                longConfidence = (isUptrend && bullishDivergence) ? 'HIGH'
+                    : (isUptrend || bullishDivergence) ? 'MEDIUM' : 'LOW';
+            }
         }
     }
 
-    // Tier D: Bullish divergence — historically high win rate reversal signal
+    // Tier D: Bullish divergence — high win-rate reversal but only when NOT in an
+    // active downtrend with strong ADX. Fading a strong falling trend even with
+    // divergence is risky; the divergence often persists for several more bars.
     if (!longTriggered && bullishDivergence && sentimentGateLong && mode !== 'long_term') {
-        longTriggered = true;
-        longReason = 'Bullish RSI Divergence';
-        if (isUptrend) longReason += ' + In Uptrend';
-        longConfidence = (isUptrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
+        const adxBlocksReversal = adxValue !== undefined && adxValue > 28 && isDowntrend;
+        if (!adxBlocksReversal) {
+            longTriggered = true;
+            longReason = 'Bullish RSI Divergence';
+            if (isUptrend) longReason += ' + In Uptrend';
+            if (volumeAboveAvg) longReason += ' + Volume Conf.';
+            longConfidence = (isUptrend && volumeAboveAvg) ? 'HIGH'
+                : (isUptrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
+        }
     }
+
+    // Sentiment alignment boosts confidence one notch (Bullish news + LONG signal).
+    // Conversely, news-flow disagreement (already filtered by sentiment gate above
+    // for the BLOCKING case) reduces confidence one notch when "Neutral" — neutral
+    // sentiment with a LOW-confidence signal is the lowest win-rate bucket.
+    const bumpConfidence = (c: 'HIGH' | 'MEDIUM' | 'LOW'): 'HIGH' | 'MEDIUM' | 'LOW' =>
+        c === 'LOW' ? 'MEDIUM' : c === 'MEDIUM' ? 'HIGH' : 'HIGH';
 
     if (longTriggered) {
         if (volumeSpike) longReason += ' + Volume Spike';
         else if (volumeAboveAvg && !longReason.includes('Volume')) longReason += ' + Volume OK';
+        if (sentimentLab === 'Bullish') {
+            longConfidence = bumpConfidence(longConfidence);
+            longReason += ' + Bullish News';
+        }
         const exits = calculateExits('LONG', latest.close, atr);
         const horizon: TradeRecommendation['horizon'] =
             mode === 'scalp' ? 'short' :
@@ -428,6 +486,9 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const hasBearishPattern = patterns.some(p =>
         ['Bearish Engulfing', 'Shooting Star', 'Evening Star', 'Three Black Crows'].includes(p));
     const sentimentGateShort = sentimentLab !== 'Bullish';
+    // Hard block: do NOT take SHORTs while a bullish RSI divergence is forming.
+    // Especially deadly for shorts because of squeeze risk on the long side.
+    const shortBlockedByDivergence = bullishDivergence && !isOverbought;
 
     let shortTriggered = false;
     let shortReason = mode === 'swing' ? 'Downtrend (MA Alignment)' : mode === 'long_term' ? 'Secular Downtrend (< SMA200)' : 'Downtrend (EMA Aligned)';
@@ -457,7 +518,7 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             mode === 'scalp' ? ema9BearishCross : false,
         ].filter(Boolean).length;
 
-        if (isDowntrend && bearishSignals >= 2 && sentimentGateShort) {
+        if (isDowntrend && bearishSignals >= 2 && sentimentGateShort && !shortBlockedByDivergence) {
             shortTriggered = true;
             if (isOverbought) shortReason += ' + RSI Overbought';
             if (macdBearish) shortReason += macdBearishCross ? ' + MACD Bearish Cross' : ' + MACD Momentum';
@@ -471,46 +532,71 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             shortConfidence = getConfidence(bearishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bearTrendAligned);
         }
 
-        // Tier B: Trend continuation — requires EMA alignment + at least one momentum factor.
-        if (!shortTriggered && isDowntrend && bearTrendAligned && rsi > 25 && sentimentGateShort) {
-            const momentumOK = macdBearishAligned
-                || (adxValue !== undefined && adxValue > 22)
-                || volumeSpike
-                || hasBearishPattern
-                || stochBearish || stochOverbought;
-            if (momentumOK) {
+        // Tier B: Trend continuation down — strict gating (mirrors LONG tier B).
+        if (!shortTriggered && isDowntrend && bearTrendAligned && rsi > 28 && sentimentGateShort && !shortBlockedByDivergence) {
+            const adxTrending = adxValue !== undefined && adxValue > 18;
+            const momentumFactors = [
+                macdBearishAligned,
+                volumeSpike,
+                hasBearishPattern,
+                stochBearish || stochOverbought,
+                pullbackToBearMA,
+            ].filter(Boolean).length;
+            const qualifies = (adxTrending && momentumFactors >= 1) || momentumFactors >= 2;
+            if (qualifies) {
                 shortTriggered = true;
                 shortReason = 'Trend Continuation Down (EMA Aligned)';
                 if (macdBearishAligned) shortReason += ' + MACD Negative';
-                if (adxValue && adxValue > 22) shortReason += ' + ADX Trending';
+                if (adxTrending) shortReason += ' + ADX Trending';
                 if (pullbackToBearMA) shortReason += ' + MA Pullback';
                 if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
-                shortConfidence = (macdBearishAligned && (adxValue && adxValue > 22)) ? 'MEDIUM' : 'LOW';
+                shortConfidence = (macdBearishAligned && adxTrending && momentumFactors >= 2) ? 'MEDIUM' : 'LOW';
             }
         }
 
-        // Tier C: Overbought extreme — high-probability reversal, fires regardless of EMA alignment
+        // Tier C: Overbought mean reversion — requires confirmation, like LONG side.
         if (!shortTriggered && isOverbought && sentimentGateShort) {
-            shortTriggered = true;
-            shortReason = isDowntrend ? 'Overbought in Downtrend' : 'RSI Overbought Reversal';
-            if (bearishDivergence) shortReason += ' + Bearish Divergence';
-            if (macdBearishAligned) shortReason += ' + MACD Negative';
-            if (stochOverbought) shortReason += ' + Stoch Overbought';
-            shortConfidence = (isDowntrend || bearishDivergence) ? 'MEDIUM' : 'LOW';
+            const reversalConfirm = bearishDivergence
+                || macdBearishAligned
+                || hasBearishPattern
+                || stochBearish
+                || (latest.close < prev.close && latest.close < latest.open);
+            const adxBlocksReversal = adxValue !== undefined && adxValue > 30 && isUptrend; // strong uptrend → don't fade
+            if (reversalConfirm && !adxBlocksReversal) {
+                shortTriggered = true;
+                shortReason = isDowntrend ? 'Overbought in Downtrend' : 'RSI Overbought Reversal';
+                if (bearishDivergence) shortReason += ' + Bearish Divergence';
+                if (macdBearishAligned) shortReason += ' + MACD Negative';
+                if (stochOverbought) shortReason += ' + Stoch Overbought';
+                if (hasBearishPattern) shortReason += ' + ' + patterns.join(', ');
+                shortConfidence = (isDowntrend && bearishDivergence) ? 'HIGH'
+                    : (isDowntrend || bearishDivergence) ? 'MEDIUM' : 'LOW';
+            }
         }
     }
 
-    // Tier D: Bearish divergence — only fires when NOT in a clear uptrend (avoids fading strong momentum)
+    // Tier D: Bearish divergence — fires only outside a strong uptrend.
+    // Same ADX guard as the LONG side: don't fade a strong rally with high ADX,
+    // even if divergence is present, since divergences can persist for weeks.
     if (!shortTriggered && bearishDivergence && !isUptrend && sentimentGateShort && mode !== 'long_term') {
-        shortTriggered = true;
-        shortReason = 'Bearish RSI Divergence';
-        if (isDowntrend) shortReason += ' + In Downtrend';
-        shortConfidence = (isDowntrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
+        const adxBlocksReversal = adxValue !== undefined && adxValue > 28 && isUptrend;
+        if (!adxBlocksReversal) {
+            shortTriggered = true;
+            shortReason = 'Bearish RSI Divergence';
+            if (isDowntrend) shortReason += ' + In Downtrend';
+            if (volumeAboveAvg) shortReason += ' + Volume Conf.';
+            shortConfidence = (isDowntrend && volumeAboveAvg) ? 'HIGH'
+                : (isDowntrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
+        }
     }
 
     if (shortTriggered) {
         if (volumeSpike) shortReason += ' + Volume Spike';
         else if (volumeAboveAvg && !shortReason.includes('Volume')) shortReason += ' + Volume OK';
+        if (sentimentLab === 'Bearish') {
+            shortConfidence = bumpConfidence(shortConfidence);
+            shortReason += ' + Bearish News';
+        }
         const exits = calculateExits('SHORT', latest.close, atr);
         const horizon: TradeRecommendation['horizon'] =
             mode === 'scalp' ? 'short' :

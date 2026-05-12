@@ -1117,7 +1117,14 @@ export default function Home() {
               {/* Chart Section */}
               <div className={`rounded-3xl p-3 sm:p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <h3 className={`text-lg font-bold mb-4 sm:mb-6 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t.priceAction}</h3>
-                <StockChart data={stockData.data} mode={mode} />
+                <StockChart
+                  data={stockData.data}
+                  mode={mode}
+                  symbol={selectedSymbol}
+                  lang={lang}
+                  recommendation={stockData.recommendation}
+                  activePosition={activePositionForSymbol ? { side: activePositionForSymbol.side, entryPrice: activePositionForSymbol.entryPrice } : null}
+                />
               </div>
 
               {/* Position Calculator */}

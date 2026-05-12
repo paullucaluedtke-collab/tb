@@ -4,7 +4,13 @@ const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY || '',
 });
 
-export type AIAction = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'SELL' | 'WAIT';
+export type AIAction =
+    // Entry actions (no open position)
+    | 'STRONG_BUY' | 'BUY' | 'SHORT' | 'STRONG_SHORT' | 'WAIT'
+    // Position-management actions (when invested)
+    | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'CLOSE' | 'REVERSE'
+    // Legacy alias kept for stored data compatibility
+    | 'SELL';
 
 export interface AIAnalysisResult {
     score: number;
@@ -80,69 +86,103 @@ ${technicals.takeProfit ? `- Signal Take Profit: $${technicals.takeProfit.toFixe
 - Current P&L: ${position.pnlPercent >= 0 ? '+' : ''}${position.pnlPercent.toFixed(2)}%
 - Holding Duration: ${position.holdingDays} day(s)
 
-IMPORTANT: Since the trader has an open ${position.side} position, your analysis MUST address:
-1. Should they HOLD, SCALE_IN (add to position), TRIM (partial profit), or SELL (close entirely)?
-2. Where should they move their stop loss? (Trail it?)
-3. Is the original thesis still intact?
-4. Are there new risks that change the outlook?` : '';
+The trader has an OPEN ${position.side} position. Your job is NOT to evaluate a fresh entry —
+it is to advise on what to DO WITH THIS POSITION right now. You MUST:
+1. Decide between HOLD / SCALE_IN / TRIM / CLOSE / REVERSE based on whether the original
+   ${position.side} thesis is still intact, broken, or actively inverting.
+2. Tell the trader exactly where to put / trail the stop loss in dollars.
+3. Suggest a profit target or signal when to TRIM (e.g. take 50% off at $X).
+4. If the trend has FLIPPED against the position with strong evidence — say CLOSE or, in
+   extreme cases, REVERSE. Do NOT default to HOLD when data clearly says exit.` : '';
 
     const actionOptions = position
-        ? '"HOLD" (keep position), "SCALE_IN" (add more), "TRIM" (take partial profit), "SELL" (close position), "WAIT" (no action yet)'
-        : '"STRONG_BUY" (score 8+, high conviction entry), "BUY" (good entry), "SELL" (short opportunity or avoid), "WAIT" (no edge, wait for better setup)';
+        ? '"HOLD" (thesis intact, stay in), "SCALE_IN" (thesis stronger, add to position), "TRIM" (take partial profit, lock in gains), "CLOSE" (exit fully — thesis broken or risk too high), "REVERSE" (flip to opposite side — strong evidence the trend inverted), "WAIT" (cannot determine, do nothing yet)'
+        : '"STRONG_BUY" (multi-factor bullish edge, R:R 3:1+), "BUY" (decent long setup, R:R 2:1+), "SHORT" (decent short setup — clear bearish edge), "STRONG_SHORT" (high-conviction short — multiple bearish factors aligned), "WAIT" (no clear edge in either direction)';
 
-    const systemPrompt = `You are an elite institutional trading analyst combining fundamental catalysts with technical analysis. You provide the MOST actionable, specific, and data-driven trading intelligence available. Be decisive and direct — ambiguity costs money.
+    const systemPrompt = `You are an elite institutional trading analyst. You play LONG and SHORT with equal seriousness. You do NOT have a long bias. You do NOT default to "BUY". Most setups have no edge — say WAIT. Only commit when the data justifies it.
 
 Your analysis framework:
-1. CATALYST ASSESSMENT: What specific events (earnings, FDA, macro, sector rotation) could move this stock 5%+ in 1-4 weeks?
-2. TECHNICAL CONFLUENCE: Do the technicals confirm or contradict the fundamental story? Look for RSI divergences, volume anomalies, key level breaks.
-3. RISK/REWARD MATH: What's the realistic upside vs downside from current price? Quantify it.
-4. TIMING PRECISION: Is NOW the right moment, or should the trader wait for a specific price level or event?
-5. POSITION MANAGEMENT: If already invested, focus on optimizing the existing position — not just entry.
+1. DIRECTIONAL EDGE: Is there a clear technical & fundamental reason this stock should rise OR fall in the next 1-4 weeks? If neither side is clearly favored → WAIT.
+2. CATALYST ASSESSMENT: Earnings, FDA, macro, sector rotation, guidance cuts, downgrades. Catalysts work in BOTH directions.
+3. TECHNICAL CONFLUENCE — bullish signals: price > SMA50 > SMA200, MACD bullish, RSI rising from 35-50, bullish divergence, volume on green days, breakout above resistance.
+4. TECHNICAL CONFLUENCE — bearish signals: price < SMA50 < SMA200, MACD bearish, RSI failing at 50-65, bearish divergence, volume on red days, breakdown below support, lower highs/lows.
+5. RISK/REWARD MATH: Quantify upside vs downside in dollars from current price.
+6. POSITION MANAGEMENT: If already invested, focus on managing THAT position. Never advise a fresh entry when one is already open.
 
-Scoring Guide (be honest, most trades are 4-6):
-- 9-10: Exceptional — multiple catalysts aligned, technical breakout, strong R:R (rare, <5% of cases)
-- 7-8: Good entry — clear catalyst + technical setup, R:R > 2:1
-- 5-6: Neutral — mixed signals, no clear edge
-- 3-4: Poor timing — headwinds, broken technicals, better entry exists
-- 1-2: Avoid — strong reasons to stay away
+SHORT setup criteria (any 2+ → consider SHORT, any 3+ → STRONG_SHORT):
+- Price broke below SMA50 with follow-through
+- Death cross (SMA50 crossing below SMA200) or already inverted MA stack
+- Bearish RSI divergence at recent highs
+- MACD bearish cross OR sustained bearish histogram
+- RSI failing to reclaim 50 from below
+- Negative catalyst (guidance cut, downgrade, sector headwind, regulatory risk)
+- Distribution: down days on rising volume
+
+LONG setup criteria (any 2+ → consider BUY, any 3+ → STRONG_BUY):
+- Price reclaiming SMA50 with follow-through, or golden cross
+- Bullish RSI divergence at recent lows
+- MACD bullish cross OR sustained bullish histogram
+- RSI breaking 50 from below
+- Positive catalyst (beat, raised guidance, sector tailwind)
+- Accumulation: up days on rising volume
+
+Scoring Guide (BE HONEST — most stocks are 4-6 with no edge):
+- 9-10: Exceptional — 4+ confluence factors aligned, R:R 3:1+, fresh catalyst (≤5% of cases)
+- 7-8: Good edge — 3 factors aligned, R:R 2:1+
+- 5-6: Mixed / no edge — conflicting signals
+- 3-4: Edge AGAINST current position / against fresh entry on that side
+- 1-2: Clear edge in OPPOSITE direction — actively dangerous to take this side
+
+Conviction:
+- HIGH: 3+ independent confluence factors + clear catalyst
+- MEDIUM: 2 factors OR 1 factor + catalyst
+- LOW: speculative, contradicting signals, or stale catalyst
 
 Available actions: ${actionOptions}
 
-CRITICAL: Output ONLY valid JSON. No markdown. No text outside JSON.`;
+CRITICAL: Output ONLY valid JSON. No markdown. No text outside JSON. Use numbers (not strings) for numeric fields. All string fields must be plain strings, NOT arrays or nested objects.`;
 
     const userMessage = position
-        ? `Analyze "${symbol}" — I have an ACTIVE ${position.side} position.
+        ? `I have an OPEN ${position.side} position on "${symbol}". Tell me what to do with it RIGHT NOW.
 ${positionSection}
 ${techSection}
 
-Based on the latest news and data, should I hold, add, trim, or close?
+Decision matrix for my ${position.side} position:
+- If technicals & catalysts STILL support ${position.side} → HOLD (or SCALE_IN if even stronger)
+- If price is approaching target / extended → TRIM
+- If thesis is broken (key level lost, MACD flipped, divergence forming) → CLOSE
+- If trend has FULLY inverted with strong evidence → REVERSE (close + open opposite)
+- If genuinely unclear → WAIT (but explain what you're waiting for)
 
 Output JSON:
-- "score" (1-10: how good is the current situation for my position?)
-- "action" ("HOLD" | "SCALE_IN" | "TRIM" | "SELL" | "WAIT")
-- "summary" (2-3 sentences: current situation assessment for someone already invested)
-- "reasoning" (bullet points: what supports/threatens the position now)
-- "timing" (1-2 sentences: what to do RIGHT NOW and what to watch for next)
-- "risks" (1-2 sentences: biggest threat to the position)
-- "keyLevels" (object: {"support": number|null, "resistance": number|null, "idealEntry": number|null} — price levels to watch)
-- "positionAdvice" (1-2 sentences: specific stop adjustment / profit target advice)
-- "catalysts" (1 sentence: next major catalyst and date if known)
+- "score" (1-10: how healthy is the ${position.side} thesis NOW. 10 = thesis stronger than at entry; 5 = neutral; 1 = thesis completely broken / opposite trade is now the right one)
+- "action" ("HOLD" | "SCALE_IN" | "TRIM" | "CLOSE" | "REVERSE" | "WAIT")
+- "summary" (2-3 sentences: state of the position right now — DO NOT re-evaluate as fresh entry)
+- "reasoning" (string with bullet points separated by newlines: what supports / threatens THIS specific ${position.side} position)
+- "timing" (1-2 sentences: concrete next step — "Move stop to $X", "Trim 50% at $Y", "Close on close below $Z")
+- "risks" (1-2 sentences: biggest threat to the position right now)
+- "keyLevels" (object: {"support": number|null, "resistance": number|null, "idealEntry": null} — relevant levels for the existing position)
+- "positionAdvice" (1-2 sentences: specific stop-loss / profit-target adjustment in dollars)
+- "catalysts" (1 sentence: next major catalyst and rough date if known)
 - "conviction" ("HIGH" | "MEDIUM" | "LOW")
 
 News & Context:
 ${text}${geoSection}`
-        : `Is NOW a good time to trade "${symbol}"?
+        : `Is there a tradeable EDGE on "${symbol}" right now — LONG, SHORT, or neither?
 ${techSection}
 
+Be willing to recommend SHORT when the data supports it. Do NOT bias toward LONG.
+If neither direction has clear edge, say WAIT — that is the correct answer most of the time.
+
 Output JSON:
-- "score" (1-10: entry quality, NOT just sentiment)
-- "action" ("STRONG_BUY" | "BUY" | "SELL" | "WAIT")
-- "summary" (2-3 sentences: setup quality + what makes this tradeable or not)
-- "reasoning" (bullet points: catalysts, technical levels, volume, sentiment factors)
-- "timing" (1-2 sentences: specific entry advice — price level, event to wait for, or "enter now because X")
-- "risks" (1-2 sentences: primary risk and what would invalidate the trade)
+- "score" (1-10: entry quality of the BEST AVAILABLE DIRECTION; 5 = no edge, WAIT)
+- "action" ("STRONG_BUY" | "BUY" | "SHORT" | "STRONG_SHORT" | "WAIT")
+- "summary" (2-3 sentences: which direction has edge AND why, or why there's no edge)
+- "reasoning" (string with bullet points separated by newlines: technical confluence + catalysts that justify the direction. If WAIT, what's missing.)
+- "timing" (1-2 sentences: specific entry trigger — price level break, indicator condition, or event to wait for)
+- "risks" (1-2 sentences: what would invalidate the trade in this direction)
 - "keyLevels" (object: {"support": number|null, "resistance": number|null, "idealEntry": number|null})
-- "catalysts" (1 sentence: next major catalyst and date if known)
+- "catalysts" (1 sentence: next major catalyst and rough date if known)
 - "conviction" ("HIGH" | "MEDIUM" | "LOW")
 
 News & Context:
@@ -166,8 +206,17 @@ ${text}${geoSection}`;
         }
 
         const result = JSON.parse(jsonMatch[0]);
-        const validActions: AIAction[] = ['STRONG_BUY', 'BUY', 'HOLD', 'SCALE_IN', 'TRIM', 'SELL', 'WAIT'];
-        const parsedAction = String(result.action || '').toUpperCase();
+        const validActions: AIAction[] = [
+            'STRONG_BUY', 'BUY', 'SHORT', 'STRONG_SHORT', 'WAIT',
+            'HOLD', 'SCALE_IN', 'TRIM', 'CLOSE', 'REVERSE',
+            'SELL',
+        ];
+        let parsedAction = String(result.action || '').toUpperCase().replace(/\s+/g, '_');
+        // Migrate legacy / synonym values
+        if (parsedAction === 'SELL' && !position) parsedAction = 'SHORT';
+        if (parsedAction === 'SELL' && position) parsedAction = 'CLOSE';
+        if (parsedAction === 'STRONG_SELL') parsedAction = 'STRONG_SHORT';
+        if (parsedAction === 'AVOID') parsedAction = 'WAIT';
 
         // Defensive: Claude sometimes returns arrays/objects despite "string" instruction.
         // Coerce everything to plain strings so the UI never crashes with

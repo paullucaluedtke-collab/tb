@@ -3,7 +3,10 @@
 import { Brain, Sparkles, Loader2, Play, TrendingUp, TrendingDown, Shield, Target, AlertTriangle, Zap } from 'lucide-react';
 import { formatPrice } from '@/lib/format';
 
-type AIAction = 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'SELL' | 'WAIT';
+type AIAction =
+    | 'STRONG_BUY' | 'BUY' | 'SHORT' | 'STRONG_SHORT' | 'WAIT'
+    | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'CLOSE' | 'REVERSE'
+    | 'SELL';
 
 interface DeepAnalysisCardProps {
     symbol: string;
@@ -41,13 +44,17 @@ interface AIResult {
 }
 
 const ACTION_CONFIG: Record<AIAction, { label: { en: string; de: string }; bg: string; text: string; border: string; icon: any }> = {
-    STRONG_BUY: { label: { en: 'STRONG BUY', de: 'STARKER KAUF' }, bg: 'bg-green-500/25', text: 'text-green-300', border: 'border-green-400/40', icon: Zap },
-    BUY: { label: { en: 'BUY', de: 'KAUFEN' }, bg: 'bg-green-500/20', text: 'text-green-400', border: 'border-green-500/30', icon: TrendingUp },
-    HOLD: { label: { en: 'HOLD', de: 'HALTEN' }, bg: 'bg-blue-500/20', text: 'text-blue-400', border: 'border-blue-500/30', icon: Shield },
-    SCALE_IN: { label: { en: 'SCALE IN', de: 'AUFSTOCKEN' }, bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: TrendingUp },
-    TRIM: { label: { en: 'TRIM', de: 'TEILVERKAUF' }, bg: 'bg-amber-500/20', text: 'text-amber-400', border: 'border-amber-500/30', icon: Target },
-    SELL: { label: { en: 'SELL', de: 'VERKAUFEN' }, bg: 'bg-red-500/20', text: 'text-red-400', border: 'border-red-500/30', icon: TrendingDown },
-    WAIT: { label: { en: 'WAIT', de: 'WARTEN' }, bg: 'bg-gray-500/20', text: 'text-gray-300', border: 'border-gray-500/30', icon: Shield },
+    STRONG_BUY:   { label: { en: 'STRONG BUY',  de: 'STARKER KAUF' },    bg: 'bg-green-500/25',   text: 'text-green-300',   border: 'border-green-400/40',   icon: Zap },
+    BUY:          { label: { en: 'BUY',         de: 'KAUFEN' },          bg: 'bg-green-500/20',   text: 'text-green-400',   border: 'border-green-500/30',   icon: TrendingUp },
+    SHORT:        { label: { en: 'SHORT',       de: 'LEERVERKAUF' },     bg: 'bg-rose-500/20',    text: 'text-rose-400',    border: 'border-rose-500/30',    icon: TrendingDown },
+    STRONG_SHORT: { label: { en: 'STRONG SHORT', de: 'STARKER SHORT' },  bg: 'bg-rose-600/30',    text: 'text-rose-300',    border: 'border-rose-500/40',    icon: TrendingDown },
+    HOLD:         { label: { en: 'HOLD',        de: 'HALTEN' },          bg: 'bg-blue-500/20',    text: 'text-blue-400',    border: 'border-blue-500/30',    icon: Shield },
+    SCALE_IN:     { label: { en: 'SCALE IN',    de: 'AUFSTOCKEN' },      bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: TrendingUp },
+    TRIM:         { label: { en: 'TRIM',        de: 'TEILVERKAUF' },     bg: 'bg-amber-500/20',   text: 'text-amber-400',   border: 'border-amber-500/30',   icon: Target },
+    CLOSE:        { label: { en: 'CLOSE',       de: 'POSITION SCHLIESSEN' }, bg: 'bg-orange-500/25', text: 'text-orange-300', border: 'border-orange-500/40', icon: AlertTriangle },
+    REVERSE:      { label: { en: 'REVERSE',     de: 'POSITION DREHEN' }, bg: 'bg-purple-500/25',  text: 'text-purple-300',  border: 'border-purple-500/40',  icon: TrendingDown },
+    SELL:         { label: { en: 'SELL',        de: 'VERKAUFEN' },       bg: 'bg-red-500/20',     text: 'text-red-400',     border: 'border-red-500/30',     icon: TrendingDown },
+    WAIT:         { label: { en: 'WAIT',        de: 'WARTEN' },          bg: 'bg-gray-500/20',    text: 'text-gray-300',    border: 'border-gray-500/30',    icon: Shield },
 };
 
 export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading, onAnalyze, hasNews, activePosition }: DeepAnalysisCardProps) {

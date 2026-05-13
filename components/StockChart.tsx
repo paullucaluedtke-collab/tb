@@ -69,7 +69,7 @@ const StockChart = ({ data, mode = 'swing', symbol, lang = 'en', recommendation,
     const takeProfit = recommendation?.takeProfit;
     const action = recommendation?.action;
 
-    const closes = data.map(d => d.close);
+    const closes = data.map(d => d.close).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
     const window52w = closes.slice(-252); // ~1 trading year
     const high52w = window52w.length > 0 ? Math.max(...window52w) : null;
     const low52w  = window52w.length > 0 ? Math.min(...window52w) : null;

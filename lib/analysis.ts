@@ -256,15 +256,8 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const bullTrendAligned = ema9v > ema21v;
     const bearTrendAligned = ema9v < ema21v;
 
-    // ── Price closing above/below key level ─────────────────────────────
-    // Breakouts WITHOUT volume confirmation are the #1 source of false signals.
-    // We require either a clear volume bump (≥ 1.1x average) OR no volume data
-    // at all (fail-open). Wide-range candles also count as confirmation.
-    const volumeOk = !hasVolData || volumeAboveAvg;
-    const wideRangeBar = (latest.high - latest.low) >= atrRef * 0.8;
-    const breakoutConfirm = volumeOk || wideRangeBar;
-    const closeAboveSma50 = latest.close > sma50 && prev.close <= (prev.sma50 || sma50) && breakoutConfirm;
-    const closeBelowSma50 = latest.close < sma50 && prev.close >= (prev.sma50 || sma50) && breakoutConfirm;
+    // (closeAboveSma50 / closeBelowSma50 with volume confirmation are defined
+    // below, after the volume helpers are available.)
 
     // ── RSI Divergence (timing-aligned, ATR-adaptive) ────────────────────
     let bullishDivergence = false;
@@ -298,6 +291,15 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const hasVolData   = (latest.volumeSma20 || 0) > 0;
     const volumeAboveAvg = hasVolData && latest.volume > (latest.volumeSma20 || 0);
     const volumeSpike    = hasVolData && latest.volume > (latest.volumeSma20 || 0) * 1.8;
+
+    // ── Price closing above/below key level (breakout w/ volume confirmation) ─
+    // Volume-less breakouts are the #1 source of false signals. Require either
+    // a volume bump OR a wide-range bar (or no volume data → fail-open).
+    const volumeOk = !hasVolData || volumeAboveAvg;
+    const wideRangeBar = (latest.high - latest.low) >= atrRef * 0.8;
+    const breakoutConfirm = volumeOk || wideRangeBar;
+    const closeAboveSma50 = latest.close > sma50 && prev.close <= (prev.sma50 || sma50) && breakoutConfirm;
+    const closeBelowSma50 = latest.close < sma50 && prev.close >= (prev.sma50 || sma50) && breakoutConfirm;
 
     // ── Earnings gate: BLOCK signals 3 days before / 1 day after earnings ──
     // Pre-earnings IV crush and post-earnings gaps both shred technical signals.

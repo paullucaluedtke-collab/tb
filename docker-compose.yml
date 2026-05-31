@@ -5,6 +5,9 @@ services:
     env_file: .env
     ports:
       - "3000:3000"
+    volumes:
+      # Persistent SQLite database (portfolio holdings) — survives container rebuilds.
+      - portfolio-data:/app/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
       interval: 30s
@@ -35,3 +38,4 @@ services:
 volumes:
   certbot-etc:
   certbot-var:
+  portfolio-data:

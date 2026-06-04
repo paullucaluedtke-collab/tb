@@ -88,7 +88,7 @@ export function usePaperTrades(
                 const currentPrice = summaries[t.symbol]?.price;
                 let pnl: number | null = null;
                 let pnlPct: number | null = null;
-                if (typeof currentPrice === 'number' && !isNaN(currentPrice)) {
+                if (typeof currentPrice === 'number' && !isNaN(currentPrice) && t.entryPrice > 0) {
                     const diff = t.side === 'LONG'
                         ? currentPrice - t.entryPrice
                         : t.entryPrice - currentPrice;
@@ -107,7 +107,7 @@ export function usePaperTrades(
                     ? (t.closePrice as number) - t.entryPrice
                     : t.entryPrice - (t.closePrice as number);
                 const pnl = diff * t.quantity;
-                const pnlPct = (diff / t.entryPrice) * 100;
+                const pnlPct = t.entryPrice > 0 ? (diff / t.entryPrice) * 100 : 0;
                 return { ...t, pnl, pnlPct };
             });
     }, [trades]);

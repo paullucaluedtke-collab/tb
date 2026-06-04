@@ -10,6 +10,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import AlertToastContainer from '@/components/AlertToast';
 import PriceAlertsPanel from '@/components/PriceAlertsPanel';
 import PaperTradesPanel from '@/components/PaperTradesPanel';
+import PortfolioPanel from '@/components/PortfolioPanel';
 import ScreenerModal from '@/components/ScreenerModal';
 import DashboardSummary from '@/components/DashboardSummary';
 import SignalAccuracyPanel from '@/components/SignalAccuracyPanel';
@@ -18,6 +19,9 @@ import { useAlerts } from '@/hooks/useAlerts';
 import { useSignalHistory } from '@/hooks/useSignalHistory';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { useSignalAccuracy } from '@/hooks/useSignalAccuracy';
+import { usePaperTrades } from '@/hooks/usePaperTrades';
+import { usePortfolio } from '@/hooks/usePortfolio';
+import { usePortfolioAlerts } from '@/hooks/usePortfolioAlerts';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
 import { getMarketStatus } from '@/lib/marketHours';
 import { StockDataPoint } from '@/lib/technical-analysis';
@@ -26,7 +30,7 @@ import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
   Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers, LogOut,
   Bell, BellOff, BellRing, History, RotateCcw, Clock, Target, SlidersHorizontal,
-  CalendarClock, Volume2, AlertTriangle
+  CalendarClock, Volume2, AlertTriangle, Briefcase
 } from 'lucide-react';
 import { ASSETS, Asset } from '@/config/assets';
 
@@ -148,19 +152,15 @@ const TRANSLATIONS = {
 
 import { useMarketData, StockData, NewsResponse } from '@/hooks/useMarketData';
 
-// Helper: Get currency for a symbol
-const getCurrencyForSymbol = (symbol: string): string => {
-  if (symbol.endsWith('.DE') || symbol.endsWith('.PA')) return 'EUR';
-  if (symbol.endsWith('.L')) return 'GBP';
-  if (symbol.endsWith('=X')) return ''; // Forex pairs
-  return 'USD';
-};
+import { resolveCurrency, localeFor } from '@/lib/format';
 
-// Helper: Format price with correct currency
-const formatPrice = (price: number, symbol: string, locale: string): string => {
-  const currency = getCurrencyForSymbol(symbol);
-  if (!currency) return price.toFixed(4); // Forex
-  return price.toLocaleString(locale, { style: 'currency', currency });
+// Helper: Format price with correct currency.
+// EUR for European market suffixes (.DE / .PA / etc.), otherwise lang-driven
+// (de → EUR, en → USD). Forex pairs render the raw rate.
+const formatPrice = (price: number, symbol: string, lang: 'en' | 'de'): string => {
+  if (symbol.endsWith('=X')) return price.toFixed(4);
+  const currency = resolveCurrency(lang, symbol);
+  return price.toLocaleString(localeFor(lang), { style: 'currency', currency });
 };
 
 
@@ -177,16 +177,33 @@ export default function Home() {
   // --- State ---
 
   // Watchlist: Initialize with all default assets
-  const [watchlist, setWatchlist] = useState<Asset[]>(ASSETS);
+  const [baseWatchlist, setBaseWatchlist] = useState<Asset[]>(ASSETS);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('AAPL');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
+  // Portfolio holdings — lifted here so held symbols auto-join the watchlist
+  // (gives every holding live prices + technical signals + sector data).
+  const { holdings: portfolioHoldings } = usePortfolio();
+
+  // Effective watchlist = default assets + any held symbols not already present.
+  const watchlist = useMemo(() => {
+    const known = new Set(baseWatchlist.map(a => a.symbol));
+    const extra: Asset[] = portfolioHoldings
+      .filter(h => !known.has(h.symbol))
+      .map(h => ({
+        symbol: h.symbol,
+        name: h.symbol,
+        category: h.symbol.endsWith('-USD') ? 'Crypto' as const : 'Stock' as const,
+      }));
+    return extra.length > 0 ? [...baseWatchlist, ...extra] : baseWatchlist;
+  }, [baseWatchlist, portfolioHoldings]);
+
   // Ensure watchlist is populated (Hydration fix)
   useEffect(() => {
-    if (watchlist.length === 0 && ASSETS.length > 0) {
-      setWatchlist(ASSETS);
+    if (baseWatchlist.length === 0 && ASSETS.length > 0) {
+      setBaseWatchlist(ASSETS);
     }
-  }, [watchlist]);
+  }, [baseWatchlist]);
 
   // Language State
   const [lang, setLang] = useState<'en' | 'de'>('en');
@@ -196,7 +213,7 @@ export default function Home() {
   const [activeCategory, setActiveCategory] = useState<Category>('All');
   const [sortOption, setSortOption] = useState<SortOption>('Combined');
   const [searchQuery, setSearchQuery] = useState('');
-  const [mode, setMode] = useState<'swing' | 'scalp' | 'long_term'>('swing');
+  const mode = 'swing' as const;
 
   // Use Custom Hook for Data Fetching
   const { stockData, newsData, summaries, aiInsights, loading: dataLoading, aiLoading, lastUpdated, triggerAiAnalysis, multiTimeframe, fetchMultiTimeframe } = useMarketData(selectedSymbol, watchlist, activeCategory, mode);
@@ -204,6 +221,10 @@ export default function Home() {
   // Alerts + Follow system
   const { followedSymbols, isFollowed, toggleFollow, toasts, dismissToast, alertHistory, clearHistory, notifPermission, requestPermission } = useAlerts(summaries);
   const [showAlertHistory, setShowAlertHistory] = useState(false);
+
+  // Portfolio signal alerts — fire when a held symbol's signal turns adverse.
+  const heldSymbols = useMemo(() => portfolioHoldings.map(h => h.symbol), [portfolioHoldings]);
+  const { toasts: portfolioToasts, dismissToast: dismissPortfolioToast } = usePortfolioAlerts(heldSymbols, summaries, notifPermission, lang);
 
   // Signal history
   const { getDuration } = useSignalHistory(summaries);
@@ -218,12 +239,23 @@ export default function Home() {
   // Paper trades + screener modals
   const [showPaperTrades, setShowPaperTrades] = useState(false);
   const [showScreener, setShowScreener] = useState(false);
+  const [showPortfolio, setShowPortfolio] = useState(false);
+  const { openTrades: paperOpenTrades } = usePaperTrades(summaries);
+
+  const activePositionForSymbol = useMemo(() => {
+    const trade = paperOpenTrades.find(t => t.symbol === selectedSymbol);
+    if (!trade) return null;
+    return {
+      side: trade.side,
+      entryPrice: trade.entryPrice,
+      quantity: trade.quantity,
+      pnlPercent: trade.pnlPct ?? 0,
+      holdingDays: Math.max(1, Math.round((Date.now() - trade.openedAt) / 86400000)),
+    };
+  }, [paperOpenTrades, selectedSymbol]);
 
   // Dark Mode
   const [darkMode, setDarkMode] = useState(false);
-
-  // Multi-Timeframe toggle
-  const [showMultiTF, setShowMultiTF] = useState(false);
 
   // Signal filter in sidebar (null = show all)
   const [signalFilter, setSignalFilter] = useState<'LONG' | 'SHORT' | 'WAIT' | null>(null);
@@ -266,22 +298,17 @@ export default function Home() {
   // LOCALSTORAGE: Persist preferences
   useEffect(() => {
     const savedLang = localStorage.getItem('sb_lang') as 'en' | 'de' | null;
-    const savedMode = localStorage.getItem('sb_mode') as 'swing' | 'scalp' | 'long_term' | null;
     const savedSort = localStorage.getItem('sb_sort') as SortOption | null;
     if (savedLang) setLang(savedLang);
-    if (savedMode) setMode(savedMode);
     if (savedSort) setSortOption(savedSort);
   }, []);
   useEffect(() => { localStorage.setItem('sb_lang', lang); }, [lang]);
-  useEffect(() => { localStorage.setItem('sb_mode', mode); }, [mode]);
   useEffect(() => { localStorage.setItem('sb_sort', sortOption); }, [sortOption]);
 
-  // Auto-fetch multi-timeframe when switching symbols (if panel is open and no cached data)
+  // Auto-fetch multi-timeframe whenever the selected symbol changes
   useEffect(() => {
-    if (showMultiTF && !multiTimeframe) {
-      fetchMultiTimeframe();
-    }
-  }, [selectedSymbol, showMultiTF]);
+    if (selectedSymbol) fetchMultiTimeframe();
+  }, [selectedSymbol]);
 
   // 3. TRANSLATION EFFECT (Keep specific UI logic here)
   useEffect(() => {
@@ -427,7 +454,7 @@ export default function Home() {
 
   const removeAsset = (e: React.MouseEvent, symbol: string) => {
     e.stopPropagation();
-    setWatchlist(prev => prev.filter(a => a.symbol !== symbol));
+    setBaseWatchlist(prev => prev.filter(a => a.symbol !== symbol));
     if (selectedSymbol === symbol) setSelectedSymbol('');
   };
 
@@ -517,28 +544,6 @@ export default function Home() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className={`w-full rounded-xl py-2.5 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all font-medium ${darkMode ? 'bg-gray-700 text-white placeholder-gray-400' : 'bg-gray-100'}`}
             />
-          </div>
-
-          {/* Mode Toggle */}
-          <div className={`flex p-1 rounded-xl mt-4 mx-1 gap-1 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
-            <button
-              onClick={() => setMode('swing')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'swing' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              {t.mode.swing}
-            </button>
-            <button
-              onClick={() => setMode('scalp')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'scalp' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              {t.mode.scalp}
-            </button>
-            <button
-              onClick={() => setMode('long_term')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all ${mode === 'long_term' ? (darkMode ? 'bg-gray-600 shadow text-indigo-400' : 'bg-white shadow text-indigo-600') : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              {t.mode.long_term}
-            </button>
           </div>
 
           {/* Category Filter Pills */}
@@ -646,6 +651,12 @@ export default function Home() {
             >
               <Target size={13} /> Trades
             </button>
+            <button
+              onClick={() => { setShowPortfolio(true); setShowMobileSidebar(false); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
+            >
+              <Briefcase size={13} /> Portfolio
+            </button>
           </div>
           <div className="flex justify-between items-center">
             <span>
@@ -731,7 +742,7 @@ export default function Home() {
                 <span className={`text-xl font-mono font-medium tracking-tight
                            ${stockData.latest.close > stockData.latest.open ? 'text-green-600' : 'text-red-500'}
                        `}>
-                  {formatPrice(stockData.latest.close, selectedSymbol, locale)}
+                  {formatPrice(stockData.latest.close, selectedSymbol, lang)}
                 </span>
                 {summaries[selectedSymbol]?.changePercent !== undefined && (
                   <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${summaries[selectedSymbol].changePercent! >= 0
@@ -773,6 +784,15 @@ export default function Home() {
             >
               <Target size={14} />
               <span className="hidden md:inline">{lang === 'de' ? 'Trades' : 'Trades'}</span>
+            </button>
+            {/* Portfolio */}
+            <button
+              onClick={() => setShowPortfolio(true)}
+              className={`p-1.5 rounded-lg transition-all hidden sm:flex items-center gap-1 text-xs font-bold ${darkMode ? 'bg-gray-700 text-gray-300 hover:text-white' : 'bg-gray-100 text-gray-500 hover:text-indigo-600'}`}
+              title={lang === 'de' ? 'Portfolio' : 'Portfolio'}
+            >
+              <Briefcase size={14} />
+              <span className="hidden md:inline">{lang === 'de' ? 'Portfolio' : 'Portfolio'}</span>
             </button>
             {/* Alert History Button */}
             <button
@@ -912,13 +932,30 @@ export default function Home() {
                       )}
                     </div>
                   </div>
-                  <span className={`px-4 py-1.5 rounded-full text-xs font-bold border
-                                   ${stockData.recommendation.confidence === 'HIGH'
-                      ? 'bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400'
-                      : (darkMode ? 'bg-gray-700 border-gray-600 text-gray-400' : 'bg-gray-50 border-gray-100 text-gray-500')}
-                               `}>
-                    {stockData.recommendation.confidence} {t.confidence}
-                  </span>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`px-4 py-1.5 rounded-full text-xs font-bold border
+                                     ${stockData.recommendation.confidence === 'HIGH'
+                        ? 'bg-indigo-50 border-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400'
+                        : (darkMode ? 'bg-gray-700 border-gray-600 text-gray-400' : 'bg-gray-50 border-gray-100 text-gray-500')}
+                                 `}>
+                      {stockData.recommendation.confidence} {t.confidence}
+                    </span>
+                    {stockData.recommendation.horizon && (
+                      <span className={`px-3 py-1 rounded-full text-[11px] font-bold border
+                        ${stockData.recommendation.horizon === 'long'
+                          ? 'bg-purple-50 border-purple-100 text-purple-600 dark:bg-purple-900/20 dark:border-purple-800 dark:text-purple-400'
+                          : stockData.recommendation.horizon === 'short'
+                          ? 'bg-sky-50 border-sky-100 text-sky-600 dark:bg-sky-900/20 dark:border-sky-800 dark:text-sky-400'
+                          : 'bg-teal-50 border-teal-100 text-teal-600 dark:bg-teal-900/20 dark:border-teal-800 dark:text-teal-400'
+                        }`}>
+                        {stockData.recommendation.horizon === 'long'
+                          ? (lang === 'de' ? '📅 Langfristig' : '📅 Long-term')
+                          : stockData.recommendation.horizon === 'short'
+                          ? (lang === 'de' ? '⚡ Kurzfristig' : '⚡ Short-term')
+                          : (lang === 'de' ? '📊 Mittelfristig' : '📊 Mid-term')}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <p className={`font-medium leading-relaxed ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
@@ -933,13 +970,13 @@ export default function Home() {
                       <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-red-900/20 border-red-900/40' : 'bg-red-50 border-red-100'}`}>
                         <span className="text-xs font-bold text-red-400 uppercase tracking-wide mb-1">{t.stopLoss}</span>
                         <span className={`text-base font-bold ${darkMode ? 'text-red-400' : 'text-red-700'}`}>
-                          {formatPrice(stockData.recommendation.stopLoss, selectedSymbol, locale)}
+                          {formatPrice(stockData.recommendation.stopLoss, selectedSymbol, lang)}
                         </span>
                       </div>
                       <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-green-900/20 border-green-900/40' : 'bg-green-50 border-green-100'}`}>
                         <span className="text-xs font-bold text-green-400 uppercase tracking-wide mb-1">{t.takeProfit}</span>
                         <span className={`text-base font-bold ${darkMode ? 'text-green-400' : 'text-green-700'}`}>
-                          {formatPrice(stockData.recommendation.takeProfit, selectedSymbol, locale)}
+                          {formatPrice(stockData.recommendation.takeProfit, selectedSymbol, lang)}
                         </span>
                       </div>
                       <div className={`p-3 rounded-xl border flex flex-col ${darkMode ? 'bg-indigo-900/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
@@ -995,6 +1032,7 @@ export default function Home() {
                     onAdd={addPriceAlert}
                     onRemove={removePriceAlert}
                     onToggle={togglePriceAlert}
+                    lang={lang}
                   />
                 )}
               </div>
@@ -1005,8 +1043,9 @@ export default function Home() {
                 lang={lang}
                 result={aiInsights[selectedSymbol] || null}
                 loading={aiLoading}
-                onAnalyze={() => triggerAiAnalysis()}
+                onAnalyze={(posInfo?: any) => triggerAiAnalysis(undefined, posInfo || activePositionForSymbol || undefined)}
                 hasNews={!!newsData?.news && newsData.news.length > 0}
+                activePosition={activePositionForSymbol}
               />
 
               {/* Signal Tracking — rolling 30-day win rate + TP/SL monitoring + trade log */}
@@ -1065,60 +1104,67 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Multi-Timeframe Overview */}
-              <div className={`rounded-3xl p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+              {/* Signal Horizon — always-visible timeframe overview */}
+              <div className={`rounded-3xl p-5 md:p-6 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Layers size={18} className="text-indigo-500" />
-                    <h3 className={`text-lg font-bold ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>
-                      {lang === 'de' ? 'Multi-Timeframe Signale' : 'Multi-Timeframe Signals'}
+                    <Layers size={16} className="text-indigo-500" />
+                    <h3 className={`text-sm font-bold uppercase tracking-wider ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      {lang === 'de' ? 'Signal-Horizont' : 'Signal Horizon'}
                     </h3>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {showMultiTF && (
-                      <button
-                        onClick={() => fetchMultiTimeframe()}
-                        className={`p-1.5 rounded-lg transition-all ${darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
-                        title="Refresh"
-                      >
-                        <RotateCcw size={14} />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => { setShowMultiTF(v => !v); if (!multiTimeframe) fetchMultiTimeframe(); }}
-                      className={`text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${showMultiTF ? 'bg-indigo-600 text-white border-indigo-600' : (darkMode ? 'border-gray-600 text-gray-400 hover:text-white' : 'border-gray-200 text-gray-500 hover:text-indigo-600')}`}
-                    >
-                      {showMultiTF ? (lang === 'de' ? 'Ausblenden' : 'Hide') : (lang === 'de' ? 'Anzeigen' : 'Show')}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => fetchMultiTimeframe()}
+                    className={`p-1.5 rounded-lg transition-all ${darkMode ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-600'}`}
+                    title="Refresh"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
                 </div>
-                {showMultiTF && multiTimeframe && (
+                {multiTimeframe ? (
                   <div className="grid grid-cols-3 gap-3">
-                    {(['scalp', 'swing', 'long_term'] as const).map(m => {
-                      const rec = multiTimeframe[m];
+                    {([
+                      { key: 'scalp', label: lang === 'de' ? 'Kurzfristig' : 'Short-term', sub: lang === 'de' ? '1–5 Tage' : '1–5 days' },
+                      { key: 'swing', label: lang === 'de' ? 'Mittelfristig' : 'Mid-term', sub: lang === 'de' ? '1–4 Wochen' : '1–4 weeks' },
+                      { key: 'long_term', label: lang === 'de' ? 'Langfristig' : 'Long-term', sub: lang === 'de' ? '1–6 Monate' : '1–6 months' },
+                    ] as const).map(({ key, label, sub }) => {
+                      const rec = multiTimeframe[key];
                       if (!rec) return null;
-                      const modeLabel = m === 'scalp' ? 'Day Trade' : m === 'swing' ? 'Swing' : 'Long Term';
                       return (
-                        <div key={m} className={`p-3 rounded-xl border text-center ${darkMode ? 'border-gray-600' : 'border-gray-100'}`}>
-                          <div className="text-xs font-bold text-gray-400 uppercase mb-2">{modeLabel}</div>
-                          <div className={`text-lg font-black ${rec.action === 'LONG' ? 'text-green-500' : rec.action === 'SHORT' ? 'text-red-500' : 'text-gray-400'}`}>
-                            {rec.action}
+                        <div key={key} className={`p-3 rounded-xl border text-center ${darkMode ? 'border-gray-600 bg-gray-700/30' : 'border-gray-100 bg-gray-50/60'}`}>
+                          <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">{label}</div>
+                          <div className={`text-base font-black ${rec.action === 'LONG' ? 'text-green-500' : rec.action === 'SHORT' ? 'text-red-500' : 'text-gray-400'}`}>
+                            {lang === 'de' ? (rec.action === 'LONG' ? 'KAUFEN' : rec.action === 'SHORT' ? 'VERKAUFEN' : 'WARTEN') : rec.action}
                           </div>
-                          <div className="text-[10px] text-gray-500 mt-1">{rec.confidence}</div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">{rec.confidence}</div>
+                          <div className="text-[9px] text-gray-400 mt-0.5 opacity-70">{sub}</div>
                         </div>
                       );
                     })}
                   </div>
-                )}
-                {showMultiTF && !multiTimeframe && (
-                  <div className="text-center py-4 text-gray-400 text-sm animate-pulse">{lang === 'de' ? 'Lade...' : 'Loading...'}</div>
+                ) : (
+                  <div className="grid grid-cols-3 gap-3">
+                    {[0, 1, 2].map(i => (
+                      <div key={i} className={`p-3 rounded-xl border text-center animate-pulse ${darkMode ? 'border-gray-600 bg-gray-700/30' : 'border-gray-100 bg-gray-50'}`}>
+                        <div className="h-3 rounded bg-gray-300 dark:bg-gray-600 mb-2 mx-4" />
+                        <div className="h-5 rounded bg-gray-200 dark:bg-gray-700 mx-2" />
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
               {/* Chart Section */}
               <div className={`rounded-3xl p-3 sm:p-5 md:p-8 shadow-sm border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
                 <h3 className={`text-lg font-bold mb-4 sm:mb-6 px-2 ${darkMode ? 'text-gray-100' : 'text-gray-900'}`}>{t.priceAction}</h3>
-                <StockChart data={stockData.data} mode={mode} />
+                <StockChart
+                  data={stockData.data}
+                  mode={mode}
+                  symbol={selectedSymbol}
+                  lang={lang}
+                  recommendation={stockData.recommendation}
+                  activePosition={activePositionForSymbol ? { side: activePositionForSymbol.side, entryPrice: activePositionForSymbol.entryPrice } : null}
+                />
               </div>
 
               {/* Position Calculator */}
@@ -1131,7 +1177,7 @@ export default function Home() {
                 reason={stockData.recommendation.reason}
                 confidence={stockData.recommendation.confidence}
                 lang={lang}
-                formatPrice={(p: number) => formatPrice(p, selectedSymbol, locale)}
+                formatPrice={(p: number) => formatPrice(p, selectedSymbol, lang)}
               />
 
               {/* News Section */}
@@ -1155,8 +1201,9 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Alert Toasts — fixed bottom-right */}
+      {/* Alert Toasts — fixed bottom-right (follow-list + portfolio alerts) */}
       <AlertToastContainer alerts={toasts} onDismiss={dismissToast} />
+      <AlertToastContainer alerts={portfolioToasts} onDismiss={dismissPortfolioToast} />
 
       {/* Paper Trades Modal */}
       {showPaperTrades && (
@@ -1164,6 +1211,20 @@ export default function Home() {
           summaries={summaries}
           watchlistSymbols={watchlist.map(a => a.symbol)}
           onClose={() => setShowPaperTrades(false)}
+          lang={lang}
+        />
+      )}
+
+      {/* Portfolio Modal */}
+      {showPortfolio && (
+        <PortfolioPanel
+          summaries={summaries as any}
+          onClose={() => setShowPortfolio(false)}
+          onSelectSymbol={(sym) => {
+            setSelectedSymbol(sym);
+            setShowPortfolio(false);
+          }}
+          lang={lang}
         />
       )}
 
@@ -1174,6 +1235,7 @@ export default function Home() {
           summaries={summaries}
           onPick={(sym) => { setSelectedSymbol(sym); setShowMobileSidebar(false); }}
           onClose={() => setShowScreener(false)}
+          lang={lang}
         />
       )}
     </div>

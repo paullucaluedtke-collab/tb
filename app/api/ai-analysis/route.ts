@@ -1,18 +1,18 @@
 import { NextResponse } from 'next/server';
 import { scrapeArticle } from '@/lib/scraper';
-import { analyzeWithClaude } from '@/lib/llm';
+import { analyzeWithClaude, PositionContext, TechnicalContext } from '@/lib/llm';
 
-export const maxDuration = 30; // Allow 30s for scraping
+export const maxDuration = 45;
 
 export async function POST(request: Request) {
     try {
-        const { symbol, newsItems } = await request.json();
+        const body = await request.json();
+        const { symbol, newsItems, position, technicals } = body;
 
         if (!symbol || !newsItems || !Array.isArray(newsItems)) {
             return NextResponse.json({ error: 'Invalid input' }, { status: 400 });
         }
 
-        // 1. Check for API Key
         if (!process.env.ANTHROPIC_API_KEY) {
             console.error('ANTHROPIC_API_KEY is missing in server environment');
             return NextResponse.json({
@@ -21,11 +21,9 @@ export async function POST(request: Request) {
             }, { status: 500 });
         }
 
-        // 2. Select top 3-5 articles to analyze
-        const targetArticles = newsItems.slice(0, 3);
+        const targetArticles = newsItems.slice(0, 5);
         let fullText = "";
 
-        // 3. Scrape & Aggregate
         await Promise.all(targetArticles.map(async (item: any) => {
             let articleText = null;
             if (item.link) {
@@ -35,12 +33,10 @@ export async function POST(request: Request) {
             if (articleText) {
                 fullText += `\n\n--- Article: ${item.title} ---\n${articleText}`;
             } else {
-                // Fallback: Use Title + Description if scraping failed/paywalled
                 fullText += `\n\n--- Article (Summary): ${item.title} ---\n${item.title}. ${item.description || ''}`;
             }
         }));
 
-        // 4. Fetch geo context (non-blocking, best-effort)
         let geoContext: string | undefined;
         try {
             const geoRes = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/geo-news`);
@@ -51,8 +47,29 @@ export async function POST(request: Request) {
             }
         } catch (_) {}
 
-        // 5. Send to Claude with geopolitical context
-        const result = await analyzeWithClaude(fullText, symbol, geoContext);
+        const posCtx: PositionContext | undefined = position ? {
+            side: position.side,
+            entryPrice: position.entryPrice,
+            quantity: position.quantity,
+            pnlPercent: position.pnlPercent ?? 0,
+            holdingDays: position.holdingDays ?? 0,
+        } : undefined;
+
+        const techCtx: TechnicalContext | undefined = technicals ? {
+            price: technicals.price,
+            change: technicals.change ?? 0,
+            rsi: technicals.rsi,
+            macdSignal: technicals.macdSignal,
+            trend: technicals.trend,
+            sma50: technicals.sma50,
+            sma200: technicals.sma200,
+            atr: technicals.atr,
+            volume: technicals.volume,
+            stopLoss: technicals.stopLoss,
+            takeProfit: technicals.takeProfit,
+        } : undefined;
+
+        const result = await analyzeWithClaude(fullText, symbol, geoContext, posCtx, techCtx);
 
         return NextResponse.json(result);
 

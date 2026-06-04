@@ -2,6 +2,7 @@ import React, { memo } from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { StockDataPoint } from '@/lib/technical-analysis';
 import { TradeRecommendation, SentimentResult } from '@/lib/analysis';
+import { resolveCurrency, localeFor } from '@/lib/format';
 
 interface StockCardProps {
     symbol: string;
@@ -18,14 +19,6 @@ interface StockCardProps {
     fiftyTwoWeekHigh?: number;
     fiftyTwoWeekLow?: number;
 }
-
-// Helper to get currency for a symbol
-const getCurrencyForSymbol = (symbol: string): string => {
-    if (symbol.endsWith('.DE') || symbol.endsWith('.PA')) return 'EUR';
-    if (symbol.endsWith('.L')) return 'GBP';
-    if (symbol.endsWith('=X')) return ''; // Forex pairs don't need currency symbol
-    return 'USD';
-};
 
 const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect, selected, onRemove, lang = 'en', aiScore, changePercent, fiftyTwoWeekHigh, fiftyTwoWeekLow }: StockCardProps) => {
     if (loading) {
@@ -60,11 +53,12 @@ const StockCard = ({ symbol, data, recommendation, sentiment, loading, onSelect,
         RecIcon = TrendingDown;
     }
 
-    const locale = lang === 'de' ? 'de-DE' : 'en-US';
-    const currency = getCurrencyForSymbol(symbol);
+    const locale = localeFor(lang);
+    const isForex = symbol.endsWith('=X');
+    const currency = resolveCurrency(lang, symbol);
 
     const formatPrice = (price: number) => {
-        if (!currency) return price.toFixed(4); // Forex
+        if (isForex) return price.toFixed(4);
         return price.toLocaleString(locale, { style: 'currency', currency });
     };
 

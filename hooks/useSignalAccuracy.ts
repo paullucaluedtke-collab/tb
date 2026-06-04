@@ -5,12 +5,12 @@ import { TradeRecommendation } from '@/lib/analysis';
 
 export interface SignalRecord {
     symbol: string;
-    action: 'LONG' | 'SHORT' | 'WAIT';
+    action: 'LONG' | 'SHORT';
     confidence: 'HIGH' | 'MEDIUM' | 'LOW';
     entryPrice: number;
     stopLoss?: number;
     takeProfit?: number;
-    startedAt: number; // timestamp ms
+    startedAt: number;
     closedAt?: number;
     closePrice?: number;
     closeReason?: 'TP_HIT' | 'SL_HIT' | 'SIGNAL_FLIP' | 'EXPIRED';
@@ -19,24 +19,26 @@ export interface SignalRecord {
 
 const STORAGE_KEY = 'sb_signal_records';
 const MAX_RECORDS = 500;
-const WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const EXPIRY_MS = 14 * 24 * 60 * 60 * 1000; // auto-expire open signals after 14 days
+const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const EXPIRY_MS = 14 * 24 * 60 * 60 * 1000;
 
-/**
- * Enhanced signal accuracy tracker:
- * - Stores TP/SL from signal recommendations
- * - Auto-closes signals when price hits TP or SL
- * - Auto-expires signals older than 14 days
- * - Closes on signal flip (previous behavior)
- * - Rolling 30-day stats with per-confidence breakdown
- */
+function safePnl(entry: number, exit: number, action: 'LONG' | 'SHORT'): number {
+    if (!entry || entry <= 0) return 0;
+    return action === 'LONG'
+        ? ((exit - entry) / entry) * 100
+        : ((entry - exit) / entry) * 100;
+}
+
+function persistRecords(records: SignalRecord[]) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(records)); } catch { }
+}
+
 export function useSignalAccuracy(
     summaries: Record<string, { price: number; recommendation: TradeRecommendation }>
 ) {
     const [records, setRecords] = useState<SignalRecord[]>([]);
     const initialized = useRef(false);
 
-    // Load from localStorage
     useEffect(() => {
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
@@ -44,145 +46,99 @@ export function useSignalAccuracy(
         } catch { }
     }, []);
 
-    // TP/SL price monitoring — runs on every summaries update
+    // Single unified effect: handles seeding, TP/SL monitoring, signal flips, and expiry
     useEffect(() => {
         if (Object.keys(summaries).length === 0) return;
-
-        setRecords(prev => {
-            let changed = false;
-            const next = prev.map(r => {
-                if (r.closedAt) return r;
-                const s = summaries[r.symbol];
-                if (!s || typeof s.price !== 'number') return r;
-                const price = s.price;
-                const now = Date.now();
-
-                // Auto-expire after 14 days
-                if (now - r.startedAt > EXPIRY_MS) {
-                    changed = true;
-                    const pnlPct = r.action === 'LONG'
-                        ? ((price - r.entryPrice) / r.entryPrice) * 100
-                        : ((r.entryPrice - price) / r.entryPrice) * 100;
-                    return { ...r, closedAt: now, closePrice: price, closeReason: 'EXPIRED' as const, pnlPct };
-                }
-
-                // Check Take Profit hit
-                if (r.takeProfit) {
-                    const tpHit = r.action === 'LONG' ? price >= r.takeProfit : price <= r.takeProfit;
-                    if (tpHit) {
-                        changed = true;
-                        const pnlPct = r.action === 'LONG'
-                            ? ((r.takeProfit - r.entryPrice) / r.entryPrice) * 100
-                            : ((r.entryPrice - r.takeProfit) / r.entryPrice) * 100;
-                        return { ...r, closedAt: now, closePrice: r.takeProfit, closeReason: 'TP_HIT' as const, pnlPct };
-                    }
-                }
-
-                // Check Stop Loss hit
-                if (r.stopLoss) {
-                    const slHit = r.action === 'LONG' ? price <= r.stopLoss : price >= r.stopLoss;
-                    if (slHit) {
-                        changed = true;
-                        const pnlPct = r.action === 'LONG'
-                            ? ((r.stopLoss - r.entryPrice) / r.entryPrice) * 100
-                            : ((r.entryPrice - r.stopLoss) / r.entryPrice) * 100;
-                        return { ...r, closedAt: now, closePrice: r.stopLoss, closeReason: 'SL_HIT' as const, pnlPct };
-                    }
-                }
-
-                return r;
-            });
-
-            if (!changed) return prev;
-            const trimmed = next.slice(-MAX_RECORDS);
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed)); } catch { }
-            return trimmed;
-        });
-    }, [summaries]);
-
-    // Track signal changes (opens + signal-flip closes)
-    useEffect(() => {
-        if (Object.keys(summaries).length === 0) return;
-
-        // Seed on first run
-        if (!initialized.current) {
-            initialized.current = true;
-            setRecords(prev => {
-                const openSymbols = new Set(prev.filter(r => !r.closedAt).map(r => r.symbol));
-                const seeded: SignalRecord[] = [...prev];
-                Object.entries(summaries).forEach(([sym, s]) => {
-                    const rec = s.recommendation;
-                    if (!rec || rec.action === 'WAIT') return;
-                    if (openSymbols.has(sym)) return;
-                    if (typeof s.price !== 'number') return;
-                    seeded.push({
-                        symbol: sym,
-                        action: rec.action,
-                        confidence: rec.confidence,
-                        entryPrice: s.price,
-                        stopLoss: rec.stopLoss,
-                        takeProfit: rec.takeProfit,
-                        startedAt: Date.now(),
-                    });
-                });
-                return seeded;
-            });
-            return;
-        }
 
         setRecords(prev => {
             let changed = false;
             const next = [...prev];
-            const openByS: Record<string, number> = {};
-            next.forEach((r, i) => { if (!r.closedAt) openByS[r.symbol] = i; });
 
+            // Seed on first run
+            if (!initialized.current) {
+                initialized.current = true;
+                const openSymbols = new Set(next.filter(r => !r.closedAt).map(r => r.symbol));
+                Object.entries(summaries).forEach(([sym, s]) => {
+                    const rec = s.recommendation;
+                    if (!rec || rec.action === 'WAIT') return;
+                    if (openSymbols.has(sym)) return;
+                    if (typeof s.price !== 'number' || s.price <= 0) return;
+                    next.push({
+                        symbol: sym, action: rec.action, confidence: rec.confidence,
+                        entryPrice: s.price, stopLoss: rec.stopLoss, takeProfit: rec.takeProfit,
+                        startedAt: Date.now(),
+                    });
+                });
+                persistRecords(next.slice(-MAX_RECORDS));
+                return next.slice(-MAX_RECORDS);
+            }
+
+            // Build index of open records
+            const openBySymbol: Record<string, number> = {};
+            next.forEach((r, i) => { if (!r.closedAt) openBySymbol[r.symbol] = i; });
+            const now = Date.now();
+
+            // Process each open record: check expiry, TP/SL, and signal flips
             Object.entries(summaries).forEach(([sym, s]) => {
-                const rec = s.recommendation;
-                if (!rec) return;
-                const action = rec.action;
                 const price = s.price;
-                if (typeof price !== 'number') return;
+                const rec = s.recommendation;
+                if (typeof price !== 'number' || price <= 0) return;
 
-                const openIdx = openByS[sym];
+                const openIdx = openBySymbol[sym];
                 const openRec = openIdx !== undefined ? next[openIdx] : undefined;
 
-                // Signal changed: close previous via SIGNAL_FLIP, open new
-                if (openRec && openRec.action !== action) {
-                    let pnlPct = 0;
-                    if (openRec.action === 'LONG') {
-                        pnlPct = ((price - openRec.entryPrice) / openRec.entryPrice) * 100;
-                    } else if (openRec.action === 'SHORT') {
-                        pnlPct = ((openRec.entryPrice - price) / openRec.entryPrice) * 100;
+                if (openRec) {
+                    // 1. Auto-expire
+                    if (now - openRec.startedAt > EXPIRY_MS) {
+                        next[openIdx] = { ...openRec, closedAt: now, closePrice: price, closeReason: 'EXPIRED', pnlPct: safePnl(openRec.entryPrice, price, openRec.action) };
+                        changed = true;
+                        delete openBySymbol[sym];
+                        return;
                     }
-                    next[openIdx] = {
-                        ...openRec,
-                        closedAt: Date.now(),
-                        closePrice: price,
-                        closeReason: 'SIGNAL_FLIP',
-                        pnlPct,
-                    };
-                    changed = true;
 
-                    if (action !== 'WAIT') {
-                        next.push({
-                            symbol: sym,
-                            action,
-                            confidence: rec.confidence,
-                            entryPrice: price,
-                            stopLoss: rec.stopLoss,
-                            takeProfit: rec.takeProfit,
-                            startedAt: Date.now(),
-                        });
+                    // 2. TP hit
+                    if (openRec.takeProfit) {
+                        const tpHit = openRec.action === 'LONG' ? price >= openRec.takeProfit : price <= openRec.takeProfit;
+                        if (tpHit) {
+                            next[openIdx] = { ...openRec, closedAt: now, closePrice: openRec.takeProfit, closeReason: 'TP_HIT', pnlPct: safePnl(openRec.entryPrice, openRec.takeProfit, openRec.action) };
+                            changed = true;
+                            delete openBySymbol[sym];
+                            return;
+                        }
                     }
-                } else if (!openRec && action !== 'WAIT') {
+
+                    // 3. SL hit
+                    if (openRec.stopLoss) {
+                        const slHit = openRec.action === 'LONG' ? price <= openRec.stopLoss : price >= openRec.stopLoss;
+                        if (slHit) {
+                            next[openIdx] = { ...openRec, closedAt: now, closePrice: openRec.stopLoss, closeReason: 'SL_HIT', pnlPct: safePnl(openRec.entryPrice, openRec.stopLoss, openRec.action) };
+                            changed = true;
+                            delete openBySymbol[sym];
+                            return;
+                        }
+                    }
+
+                    // 4. Signal flip
+                    if (rec && openRec.action !== rec.action) {
+                        next[openIdx] = { ...openRec, closedAt: now, closePrice: price, closeReason: 'SIGNAL_FLIP', pnlPct: safePnl(openRec.entryPrice, price, openRec.action) };
+                        changed = true;
+                        delete openBySymbol[sym];
+
+                        if (rec.action !== 'WAIT') {
+                            next.push({
+                                symbol: sym, action: rec.action, confidence: rec.confidence,
+                                entryPrice: price, stopLoss: rec.stopLoss, takeProfit: rec.takeProfit,
+                                startedAt: now,
+                            });
+                        }
+                        return;
+                    }
+                } else if (rec && rec.action !== 'WAIT') {
+                    // No open record — start tracking
                     next.push({
-                        symbol: sym,
-                        action,
-                        confidence: rec.confidence,
-                        entryPrice: price,
-                        stopLoss: rec.stopLoss,
-                        takeProfit: rec.takeProfit,
-                        startedAt: Date.now(),
+                        symbol: sym, action: rec.action, confidence: rec.confidence,
+                        entryPrice: price, stopLoss: rec.stopLoss, takeProfit: rec.takeProfit,
+                        startedAt: now,
                     });
                     changed = true;
                 }
@@ -190,12 +146,11 @@ export function useSignalAccuracy(
 
             if (!changed) return prev;
             const trimmed = next.slice(-MAX_RECORDS);
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed)); } catch { }
+            persistRecords(trimmed);
             return trimmed;
         });
     }, [summaries]);
 
-    // Compute stats for the 30-day rolling window
     const stats = useMemo(() => {
         const cutoff = Date.now() - WINDOW_MS;
         const closed = records.filter(r => r.closedAt && r.startedAt >= cutoff && typeof r.pnlPct === 'number');
@@ -203,7 +158,6 @@ export function useSignalAccuracy(
 
         const longs = closed.filter(r => r.action === 'LONG');
         const shorts = closed.filter(r => r.action === 'SHORT');
-
         const winsL = longs.filter(r => (r.pnlPct ?? 0) > 0).length;
         const winsS = shorts.filter(r => (r.pnlPct ?? 0) > 0).length;
         const wins = winsL + winsS;
@@ -217,50 +171,30 @@ export function useSignalAccuracy(
         const flips = closed.filter(r => r.closeReason === 'SIGNAL_FLIP').length;
         const expired = closed.filter(r => r.closeReason === 'EXPIRED').length;
 
-        // Per-confidence breakdown
         const byConf = (['HIGH', 'MEDIUM', 'LOW'] as const).map(c => {
             const subset = closed.filter(r => r.confidence === c);
             const w = subset.filter(r => (r.pnlPct ?? 0) > 0).length;
             return {
-                confidence: c,
-                total: subset.length,
-                wins: w,
+                confidence: c, total: subset.length, wins: w,
                 winRate: subset.length > 0 ? (w / subset.length) * 100 : null,
                 avgPnl: subset.length > 0 ? subset.reduce((a, r) => a + (r.pnlPct ?? 0), 0) / subset.length : 0,
             };
         });
 
-        // Best and worst trade
         const best = closed.length > 0 ? closed.reduce((a, b) => ((a.pnlPct ?? 0) > (b.pnlPct ?? 0) ? a : b)) : null;
         const worst = closed.length > 0 ? closed.reduce((a, b) => ((a.pnlPct ?? 0) < (b.pnlPct ?? 0) ? a : b)) : null;
 
         return {
-            totalClosed: closed.length,
-            openCount: open.length,
-            wins,
-            losses: closed.length - wins,
+            totalClosed: closed.length, openCount: open.length, wins, losses: closed.length - wins,
             winRate: closed.length > 0 ? (wins / closed.length) * 100 : null,
-            longCount: longs.length,
-            longWinRate: longs.length > 0 ? (winsL / longs.length) * 100 : null,
-            shortCount: shorts.length,
-            shortWinRate: shorts.length > 0 ? (winsS / shorts.length) * 100 : null,
-            avgPnl,
-            tpHits,
-            slHits,
-            flips,
-            expired,
-            byConfidence: byConf,
-            bestTrade: best,
-            worstTrade: worst,
+            longCount: longs.length, longWinRate: longs.length > 0 ? (winsL / longs.length) * 100 : null,
+            shortCount: shorts.length, shortWinRate: shorts.length > 0 ? (winsS / shorts.length) * 100 : null,
+            avgPnl, tpHits, slHits, flips, expired, byConfidence: byConf, bestTrade: best, worstTrade: worst,
         };
     }, [records]);
 
-    // Recent trade log (last 20 closed)
     const recentTrades = useMemo(() => {
-        return records
-            .filter(r => r.closedAt)
-            .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
-            .slice(0, 20);
+        return records.filter(r => r.closedAt).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0)).slice(0, 20);
     }, [records]);
 
     const reset = () => {

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Bell, X, ArrowUp, ArrowDown, Check, PowerOff, Power } from 'lucide-react';
 import { PriceAlert } from '@/hooks/usePriceAlerts';
+import { cur, type Lang } from '@/lib/format';
 
 interface Props {
     symbol: string;
@@ -11,6 +12,7 @@ interface Props {
     onAdd: (symbol: string, direction: 'above' | 'below', price: number) => void;
     onRemove: (id: string) => void;
     onToggle: (id: string) => void;
+    lang?: Lang;
 }
 
 export default function PriceAlertsPanel({
@@ -20,7 +22,9 @@ export default function PriceAlertsPanel({
     onAdd,
     onRemove,
     onToggle,
+    lang = 'en',
 }: Props) {
+    const c = cur(lang, symbol);
     const [direction, setDirection] = useState<'above' | 'below'>('above');
     const [priceStr, setPriceStr] = useState('');
 
@@ -45,7 +49,7 @@ export default function PriceAlertsPanel({
                 <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Price Alerts</h3>
                 {currentPrice !== undefined && (
                     <span className="ml-auto text-xs text-gray-500 dark:text-gray-400">
-                        Current: <span className="font-bold text-gray-900 dark:text-gray-100">${formatPrice(currentPrice)}</span>
+                        Current: <span className="font-bold text-gray-900 dark:text-gray-100">{c}{formatPrice(currentPrice)}</span>
                     </span>
                 )}
             </div>
@@ -117,7 +121,7 @@ export default function PriceAlertsPanel({
                                 <ArrowDown size={12} className="text-red-500" />
                             )}
                             <span className="font-bold text-gray-700 dark:text-gray-200">
-                                {a.direction === 'above' ? '≥' : '≤'} ${formatPrice(a.price)}
+                                {a.direction === 'above' ? '≥' : '≤'} {c}{formatPrice(a.price)}
                             </span>
                             {a.triggeredAt && (
                                 <span className="text-yellow-600 font-medium">triggered</span>

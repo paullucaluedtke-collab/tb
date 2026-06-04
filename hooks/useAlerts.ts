@@ -112,15 +112,21 @@ export function useAlerts(
         });
     }, [summaries, followedSymbols, notifPermission]);
 
-    // Update baseline when new symbols are followed
+    // Update baseline when follow list changes: seed new, clean removed
     useEffect(() => {
         if (!initialized.current) return;
+        const followedSet = new Set(followedSymbols);
+        // Seed newly followed symbols
         followedSymbols.forEach(sym => {
             if (!(sym in prevActions.current)) {
                 const action = summaries[sym]?.recommendation?.action;
                 if (action) prevActions.current[sym] = action;
             }
         });
+        // Clean up unfollowed symbols to prevent memory leak
+        for (const sym of Object.keys(prevActions.current)) {
+            if (!followedSet.has(sym)) delete prevActions.current[sym];
+        }
     }, [followedSymbols, summaries]);
 
     const dismissToast = useCallback((id: string) => {

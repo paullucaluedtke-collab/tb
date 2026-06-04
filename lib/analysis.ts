@@ -99,10 +99,11 @@ export interface TradeRecommendation {
     stopLoss?: number;
     takeProfit?: number;
     signalStatus?: 'CONFIRMED' | 'FORMING';
+    horizon?: 'short' | 'medium' | 'long'; // Expected signal duration
 }
 
 export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' | 'long_term' = 'swing', sentimentLab: 'Bullish' | 'Bearish' | 'Neutral' = 'Neutral', nextEarnings?: string | null): TradeRecommendation => {
-    if (data.length < 200) {
+    if (data.length < 50) {
         return { action: 'WAIT', reason: 'Not enough data', confidence: 'LOW' };
     }
 
@@ -136,11 +137,13 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     if (ti.bullishengulfingpattern) checkPattern(ti.bullishengulfingpattern, 'Bullish Engulfing');
     if (ti.bullishhammerstick) checkPattern(ti.bullishhammerstick, 'Hammer');
     if (ti.morningstar) checkPattern(ti.morningstar, 'Morning Star');
+    if (ti.threewhitesoldiers) checkPattern(ti.threewhitesoldiers, 'Three White Soldiers');
 
     // Bearish Patterns
     if (ti.bearishengulfingpattern) checkPattern(ti.bearishengulfingpattern, 'Bearish Engulfing');
     if (ti.shootingstar) checkPattern(ti.shootingstar, 'Shooting Star');
     if (ti.eveningstar) checkPattern(ti.eveningstar, 'Evening Star');
+    if (ti.threeblackcrows) checkPattern(ti.threeblackcrows, 'Three Black Crows');
 
     // ── Trend detection ──────────────────────────────────────────────────
     let isUptrend = false;
@@ -152,70 +155,109 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
     const ema9v  = latest.ema9 || 0;
     const ema21v = latest.ema21 || 0;
     const ema50v = latest.ema50 || 0;
+    const hasSma200 = sma200 > 0 && data.length >= 200;
+
+    // Short-term EMA trend — always available, used as fallback
+    const emaUptrend   = latest.close > ema21v && ema9v > ema21v;
+    const emaDowntrend = latest.close < ema21v && ema9v < ema21v;
 
     if (mode === 'scalp') {
-        // Scalp: EMA alignment + long-term trend filter to avoid counter-trend scalps
-        const longTermBullish = sma50 > sma200;
-        const longTermBearish = sma50 < sma200;
-        isUptrend   = latest.close > ema50v && ema9v > ema21v && longTermBullish;
-        isDowntrend = latest.close < ema50v && ema9v < ema21v && longTermBearish;
+        isUptrend   = emaUptrend;
+        isDowntrend = emaDowntrend;
+        // Last resort for scalp: pure EMA9 vs EMA21 direction
+        if (!isUptrend && !isDowntrend && ema9v > 0 && ema21v > 0) {
+            isUptrend   = ema9v > ema21v;
+            isDowntrend = ema9v < ema21v;
+        }
         trendReason = 'Uptrend (EMA Aligned)';
     } else if (mode === 'swing') {
-        // Require minimum 1.5% separation between SMA50 and SMA200 to confirm real trend
-        isUptrend   = latest.close > sma50 && sma50 > sma200 * 1.015;
-        isDowntrend = latest.close < sma50 && sma50 < sma200 * 0.985;
-        trendReason = 'Strong Uptrend (MA Alignment)';
+        // Strong: MA stack aligned. Weak fallback: short-term EMA trend.
+        const strongUp   = hasSma200 ? (latest.close > sma50 && sma50 > sma200) : (latest.close > sma50);
+        const strongDown = hasSma200 ? (latest.close < sma50 && sma50 < sma200) : (latest.close < sma50);
+        isUptrend   = strongUp   || emaUptrend;
+        isDowntrend = strongDown || emaDowntrend;
+        trendReason = strongUp ? 'Uptrend (MA Alignment)' : 'Uptrend (EMA Aligned)';
+        // Last resort: when MA stack is ambiguous (grey zone) AND EMA alignment is also mixed,
+        // fall back to pure EMA9 vs EMA21 direction so no stock is permanently stuck at WAIT.
+        if (!isUptrend && !isDowntrend && ema9v > 0 && ema21v > 0) {
+            isUptrend   = ema9v > ema21v;
+            isDowntrend = ema9v < ema21v;
+            trendReason = isUptrend ? 'EMA Momentum Bullish' : 'EMA Momentum Bearish';
+        }
     } else {
-        // Long-term: require 2% separation for secular trends
-        isUptrend   = latest.close > sma50 && sma50 > sma200 * 1.02;
-        isDowntrend = latest.close < sma50 && sma50 < sma200 * 0.98;
+        const strongUp   = hasSma200 ? (latest.close > sma50 && sma50 > sma200) : (latest.close > sma50);
+        const strongDown = hasSma200 ? (latest.close < sma50 && sma50 < sma200) : (latest.close < sma50);
+        isUptrend   = strongUp;
+        isDowntrend = strongDown;
+        // Long-term grey zone: fall back to SMA50 alone
+        if (!isUptrend && !isDowntrend) {
+            isUptrend   = latest.close > sma50 && sma50 > 0;
+            isDowntrend = latest.close < sma50 && sma50 > 0;
+        }
         trendReason = 'Secular Uptrend (SMA50 > SMA200)';
     }
 
-    // ── ADX trend-strength gate (>25 = confirmed trend, not choppy) ──────
+    // ── ADX trend-strength (soft gate: low ADX reduces confidence, doesn't block) ──
     const adxValue = latest.adx;
-    const trendIsStrong = !adxValue || adxValue > 25;
+    const trendIsStrong = !adxValue || adxValue > 20;
 
-    // ── RSI (tighter thresholds to reduce false signals) ─────────────────
+    // ── RSI (standard thresholds) ────────────────────────────────────────
     const rsi = latest.rsi14 || 50;
     const slowRsi = latest.rsi70 || 50;
-    const isOversold  = mode === 'long_term' ? (slowRsi < 35 || rsi < 30) : rsi < 28;
-    const isOverbought = mode === 'long_term' ? (slowRsi > 70 || rsi > 75) : rsi > 72;
+    const isOversold  = mode === 'long_term' ? (slowRsi < 35 || rsi < 32) : rsi < 32;
+    const isOverbought = mode === 'long_term' ? (slowRsi > 65 || rsi > 68) : rsi > 68;
+    // RSI supportive zones for trend-following (not extreme in either direction)
+    const rsiSupportsBull = rsi > 35 && rsi < 75;
+    const rsiSupportsBear = rsi < 65 && rsi > 25;
 
-    // ── MACD: fresh cross or strong accelerating momentum ────────────────
+    // ── MACD: cross, momentum, or aligned direction ─────────────────────
     const macdHist     = latest.macd?.histogram || 0;
     const prevMacdHist = prev.macd?.histogram   || 0;
-    const atrRef = latest.atr || (latest.high - latest.low);
-    // Minimum histogram magnitude to ignore zero-line noise
-    const macdMinMag = atrRef * 0.02;
+    const atrRef = latest.atr || (latest.high - latest.low) || 1;
+    const macdMinMag = atrRef * 0.01;
 
     const macdBullishCross    = macdHist > macdMinMag && prevMacdHist <= 0;
-    const macdBullishMomentum = macdHist > macdMinMag && macdHist > prevMacdHist * 1.2 && prevMacdHist > 0;
+    const macdBullishMomentum = macdHist > macdMinMag && macdHist > prevMacdHist && prevMacdHist > 0;
+    const macdBullishAligned  = macdHist > 0;
     const macdBullish = macdBullishCross || macdBullishMomentum;
 
     const macdBearishCross    = macdHist < -macdMinMag && prevMacdHist >= 0;
-    const macdBearishMomentum = macdHist < -macdMinMag && macdHist < prevMacdHist * 1.2 && prevMacdHist < 0;
+    const macdBearishMomentum = macdHist < -macdMinMag && macdHist < prevMacdHist && prevMacdHist < 0;
+    const macdBearishAligned  = macdHist < 0;
     const macdBearish = macdBearishCross || macdBearishMomentum;
 
     // ── Special long-term triggers ───────────────────────────────────────
-    const isGoldenCross = sma50 > sma200 && (prev.sma50 || 0) <= (prev.sma200 || 0);
-    const isDeathCross  = sma50 < sma200 && (prev.sma50 || 0) >= (prev.sma200 || 0);
+    const isGoldenCross = hasSma200 && sma50 > sma200 && (prev.sma50 || 0) <= (prev.sma200 || 0);
+    const isDeathCross  = hasSma200 && sma50 < sma200 && (prev.sma50 || 0) >= (prev.sma200 || 0);
 
-    // ── EMA 9/21 cross (scalp momentum signal) ──────────────────────────
+    // ── EMA 9/21 cross ──────────────────────────────────────────────────
     const ema9BullishCross = ema9v > ema21v && (prev.ema9 || 0) <= (prev.ema21 || 0);
     const ema9BearishCross = ema9v < ema21v && (prev.ema9 || 0) >= (prev.ema21 || 0);
+    const ema9AboveEma21 = ema9v > ema21v;
+    const ema9BelowEma21 = ema9v < ema21v;
 
-    // ── Stochastic RSI (0-1 scale): K crossing D in extreme zones ───────
+    // ── Stochastic RSI (0-100 scale from library): K crossing D in extreme zones
     const stochK     = latest.stochRsi?.k ?? -1;
     const stochD     = latest.stochRsi?.d ?? -1;
     const prevStochK = prev.stochRsi?.k   ?? -1;
     const prevStochD = prev.stochRsi?.d   ?? -1;
-    // Bullish: K crosses above D while in oversold zone (<0.25)
-    const stochBullish = stochK >= 0 && stochK < 0.25 && stochD >= 0
+    const stochBullish = stochK >= 0 && stochK < 25 && stochD >= 0
         && prevStochK <= prevStochD && stochK > stochD;
-    // Bearish: K crosses below D while in overbought zone (>0.75)
-    const stochBearish = stochK >= 0 && stochK > 0.75 && stochD >= 0
+    const stochBearish = stochK >= 0 && stochK > 75 && stochD >= 0
         && prevStochK >= prevStochD && stochK < stochD;
+    const stochOversold  = stochK >= 0 && stochK < 20;
+    const stochOverbought = stochK >= 0 && stochK > 80;
+
+    // ── Pullback to moving average support/resistance ───────────────────
+    const pullbackToBullMA = latest.close > sma50 && latest.low <= ema21v * 1.01 && latest.close > ema21v;
+    const pullbackToBearMA = latest.close < sma50 && latest.high >= ema21v * 0.99 && latest.close < ema21v;
+
+    // ── Trend alignment: EMAs stacked in order (doesn't require close > ema9 exactly)
+    const bullTrendAligned = ema9v > ema21v;
+    const bearTrendAligned = ema9v < ema21v;
+
+    // (closeAboveSma50 / closeBelowSma50 with volume confirmation are defined
+    // below, after the volume helpers are available.)
 
     // ── RSI Divergence (timing-aligned, ATR-adaptive) ────────────────────
     let bullishDivergence = false;
@@ -224,7 +266,6 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
         const lookback = data.slice(-20);
         const tol = atrRef * 0.5;
 
-        // Find bar indices with extreme price and RSI separately
         let minPriceIdx = 0, minRsiIdx = 0, maxPriceIdx = 0, maxRsiIdx = 0;
         for (let i = 0; i < lookback.length - 1; i++) {
             if (lookback[i].low < lookback[minPriceIdx].low) minPriceIdx = i;
@@ -233,78 +274,85 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             if ((lookback[i].rsi14 ?? 0) > (lookback[maxRsiIdx].rsi14 ?? 0)) maxRsiIdx = i;
         }
 
-        // Bullish: price makes new low but RSI makes higher low (needs timing separation)
         const priceAtNewLow = latest.low <= lookback[minPriceIdx].low + tol;
-        const rsiHigherLow = (latest.rsi14 || 50) > (lookback[minRsiIdx].rsi14 || 50) + 5;
-        if (priceAtNewLow && rsiHigherLow && Math.abs(minPriceIdx - minRsiIdx) >= 3) {
+        const rsiHigherLow = (latest.rsi14 || 50) > (lookback[minRsiIdx].rsi14 || 50) + 3;
+        if (priceAtNewLow && rsiHigherLow && Math.abs(minPriceIdx - minRsiIdx) >= 2) {
             bullishDivergence = true;
         }
 
-        // Bearish: price makes new high but RSI makes lower high
         const priceAtNewHigh = latest.high >= lookback[maxPriceIdx].high - tol;
-        const rsiLowerHigh = (latest.rsi14 || 50) < (lookback[maxRsiIdx].rsi14 || 50) - 5;
-        if (priceAtNewHigh && rsiLowerHigh && Math.abs(maxPriceIdx - maxRsiIdx) >= 3) {
+        const rsiLowerHigh = (latest.rsi14 || 50) < (lookback[maxRsiIdx].rsi14 || 50) - 3;
+        if (priceAtNewHigh && rsiLowerHigh && Math.abs(maxPriceIdx - maxRsiIdx) >= 2) {
             bearishDivergence = true;
         }
     }
 
-    // ── Volume (require 1.2x average for meaningful confirmation) ────────
+    // ── Volume: used for confidence only, never as a hard gate ──────────
     const hasVolData   = (latest.volumeSma20 || 0) > 0;
-    const volumeAboveAvg = !hasVolData || latest.volume > (latest.volumeSma20 || 0) * 1.2;
-    const volumeSpike    =  hasVolData && latest.volume > (latest.volumeSma20 || 0) * 1.8;
-    const volumeGate = !hasVolData || volumeAboveAvg;
+    const volumeAboveAvg = hasVolData && latest.volume > (latest.volumeSma20 || 0);
+    const volumeSpike    = hasVolData && latest.volume > (latest.volumeSma20 || 0) * 1.8;
 
-    // ── Earnings gate: BLOCK signals within 2 days of earnings ───────────
+    // ── Price closing above/below key level (breakout w/ volume confirmation) ─
+    // Volume-less breakouts are the #1 source of false signals. Require either
+    // a volume bump OR a wide-range bar (or no volume data → fail-open).
+    const volumeOk = !hasVolData || volumeAboveAvg;
+    const wideRangeBar = (latest.high - latest.low) >= atrRef * 0.8;
+    const breakoutConfirm = volumeOk || wideRangeBar;
+    const closeAboveSma50 = latest.close > sma50 && prev.close <= (prev.sma50 || sma50) && breakoutConfirm;
+    const closeBelowSma50 = latest.close < sma50 && prev.close >= (prev.sma50 || sma50) && breakoutConfirm;
+
+    // ── Earnings gate: BLOCK signals 3 days before / 1 day after earnings ──
+    // Pre-earnings IV crush and post-earnings gaps both shred technical signals.
     if (nextEarnings) {
         const daysUntil = Math.ceil((new Date(nextEarnings).getTime() - Date.now()) / 86_400_000);
-        if (daysUntil >= 0 && daysUntil <= 2) {
-            return { action: 'WAIT', reason: 'Earnings within 2 days', confidence: 'LOW', patterns };
+        if (daysUntil >= -1 && daysUntil <= 3) {
+            return { action: 'WAIT', reason: 'Earnings window (-1d / +3d) — high gap risk', confidence: 'LOW', patterns };
         }
     }
 
-    // ── ATR-based exits anchored to swing low/high ───────────────────────
+    // ── Volatility gate: skip extreme regimes where ATR% > 7%. ──────────────
+    // Hyper-volatile names whipsaw both directions; technical setups fail there.
+    const atrPct = (atrRef / latest.close) * 100;
+    if (atrPct > 7 && mode !== 'scalp') {
+        return { action: 'WAIT', reason: `Extreme volatility (ATR ${atrPct.toFixed(1)}%) — unreliable signals`, confidence: 'LOW', patterns };
+    }
+
+    // ── ATR-based exits — pure multipliers guarantee consistent R:R ──────
     const atr = atrRef;
     const calculateExits = (action: 'LONG' | 'SHORT', price: number, atrValue: number) => {
-        const slMult = mode === 'scalp' ? 1.2 : mode === 'swing' ? 2.0 : 4.0;
-        const tpMult = mode === 'scalp' ? 2.0 : mode === 'swing' ? 4.0 : 10.0;
-
-        if (mode !== 'long_term') {
-            const bars = mode === 'scalp' ? 10 : 20;
-            const recent = data.slice(-bars);
-            const swingLow  = Math.min(...recent.map(d => d.low));
-            const swingHigh = Math.max(...recent.map(d => d.high));
-            if (action === 'LONG') return {
-                stopLoss:   Math.min(price - atrValue * slMult, swingLow - atrValue * 0.75),
-                takeProfit: price + atrValue * tpMult,
-            };
-            return {
-                stopLoss:   Math.max(price + atrValue * slMult, swingHigh + atrValue * 0.75),
-                takeProfit: price - atrValue * tpMult,
-            };
-        }
+        const slMult = mode === 'scalp' ? 1.2 : mode === 'swing' ? 1.8 : 3.0;
+        const tpMult = mode === 'scalp' ? 2.4 : mode === 'swing' ? 3.5 : 8.0;
         return action === 'LONG'
             ? { stopLoss: price - atrValue * slMult, takeProfit: price + atrValue * tpMult }
             : { stopLoss: price + atrValue * slMult, takeProfit: price - atrValue * tpMult };
     };
 
     // ── Confidence from confirmation count ───────────────────────────────
-    const getConfidence = (count: number): 'HIGH' | 'MEDIUM' | 'LOW' => {
-        if (count >= 4) return 'HIGH';
+    const getConfidence = (count: number, strong: boolean): 'HIGH' | 'MEDIUM' | 'LOW' => {
+        if (count >= 4 || (count >= 3 && strong)) return 'HIGH';
         if (count >= 2) return 'MEDIUM';
         return 'LOW';
     };
 
-    // R:R gate: reject signals where risk/reward < 1.5 or risk is zero
+    // R:R gate. Scalps need looser cutoff (more frequent, smaller moves);
+    // swing/long-term must clear ≥ 1.6 — institutional minimum that beats commissions
+    // and survives reasonable slippage. Statistically, signals with R:R 1.3-1.5
+    // need ≥58% win rate to break even, which is rare in practice.
+    const minRR = mode === 'scalp' ? 1.4 : 1.6;
     const meetsRR = (price: number, sl: number, tp: number): boolean => {
         const risk   = Math.abs(price - sl);
         const reward = Math.abs(tp - price);
         if (risk <= 0) return false;
-        return reward / risk >= 1.5;
+        return reward / risk >= minRR;
     };
 
     // ── 1. LONG signals ──────────────────────────────────────────────────
-    const hasBullishPattern = patterns.some(p => ['Bullish Engulfing', 'Hammer', 'Morning Star'].includes(p));
+    const hasBullishPattern = patterns.some(p =>
+        ['Bullish Engulfing', 'Hammer', 'Morning Star', 'Three White Soldiers'].includes(p));
     const sentimentGateLong = sentimentLab !== 'Bearish';
+    // Hard block: do NOT take LONGs while a bearish RSI divergence is active.
+    // Top-formation divergence is one of the most reliable mean-reversion signals.
+    const longBlockedByDivergence = bearishDivergence && !isOversold;
 
     let longTriggered = false;
     let longReason = trendReason;
@@ -318,48 +366,134 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             longConfidence = isGoldenCross ? 'HIGH' : 'MEDIUM';
         }
     } else {
-        // Bollinger bounce: prev touched lower band, latest reverses above middle band
-        const bbMid = latest.bb?.middle || 0;
+        const bbMid = latest.bb?.middle ?? 0;
         const bbLowerHit = latest.bb?.lower && prev.bb?.lower
             ? (prev.low <= prev.bb.lower && latest.close > prev.close && latest.close > bbMid)
             : false;
-        const bullishSignals = [isOversold, macdBullish, bbLowerHit, hasBullishPattern, stochBullish,
-            mode === 'scalp' ? ema9BullishCross : false].filter(Boolean).length;
 
-        // Require >= 2 independent confirmations
-        if (isUptrend && trendIsStrong && bullishSignals >= 2 && sentimentGateLong && volumeGate) {
+        const bullishSignals = [
+            isOversold,
+            macdBullish,
+            bbLowerHit,
+            hasBullishPattern,
+            stochBullish || stochOversold,
+            pullbackToBullMA,
+            closeAboveSma50,
+            mode === 'scalp' ? ema9BullishCross : false,
+        ].filter(Boolean).length;
+
+        if (isUptrend && bullishSignals >= 2 && sentimentGateLong && !longBlockedByDivergence) {
             longTriggered = true;
             if (isOversold) longReason += ' + RSI Oversold';
             if (macdBullish) longReason += macdBullishCross ? ' + MACD Bullish Cross' : ' + MACD Momentum';
             if (bbLowerHit) longReason += ' + Bollinger Bounce';
             if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
             if (stochBullish) longReason += ' + Stoch RSI Cross';
+            else if (stochOversold) longReason += ' + Stoch Oversold';
+            if (pullbackToBullMA) longReason += ' + MA Pullback';
+            if (closeAboveSma50) longReason += ' + SMA50 Breakout';
             if (mode === 'scalp' && ema9BullishCross) longReason += ' + EMA 9/21 Cross';
-            longConfidence = getConfidence(bullishSignals + (volumeSpike ? 1 : 0));
+            longConfidence = getConfidence(bullishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bullTrendAligned);
+        }
+
+        // Tier B: Trend continuation — strict gating to lift win rate.
+        // Require EMA alignment AND a *trending* market (ADX>18) AND ≥1 momentum factor.
+        // Pure trend-only entries without a fresh momentum trigger are the lowest
+        // win-rate bucket in backtests — we keep them only when both ADX and MACD agree.
+        if (!longTriggered && isUptrend && bullTrendAligned && rsi < 72 && sentimentGateLong && !longBlockedByDivergence) {
+            const adxTrending = adxValue !== undefined && adxValue > 18;
+            const momentumFactors = [
+                macdBullishAligned,
+                volumeSpike,
+                hasBullishPattern,
+                stochBullish || stochOversold,
+                pullbackToBullMA,
+            ].filter(Boolean).length;
+            // Need trending ADX + at least one momentum factor, OR two momentum factors without ADX
+            const qualifies = (adxTrending && momentumFactors >= 1) || momentumFactors >= 2;
+            if (qualifies) {
+                longTriggered = true;
+                longReason = 'Trend Continuation (EMA Aligned)';
+                if (macdBullishAligned) longReason += ' + MACD Positive';
+                if (adxTrending) longReason += ' + ADX Trending';
+                if (pullbackToBullMA) longReason += ' + MA Pullback';
+                if (hasBullishPattern) longReason += ` + ${patterns.join(', ')}`;
+                longConfidence = (macdBullishAligned && adxTrending && momentumFactors >= 2) ? 'MEDIUM' : 'LOW';
+            }
+        }
+
+        // Tier C: Oversold mean reversion — requires CONFIRMATION to fire counter-trend.
+        // Plain RSI<32 is famous for generating "falling knife" longs. We now demand
+        // either bullish divergence, OR a bullish candle / MACD turn / stoch cross.
+        if (!longTriggered && isOversold && sentimentGateLong) {
+            const reversalConfirm = bullishDivergence
+                || macdBullishAligned
+                || hasBullishPattern
+                || stochBullish
+                || (latest.close > prev.close && latest.close > latest.open); // bullish close after extreme RSI
+            const adxBlocksReversal = adxValue !== undefined && adxValue > 30 && !isUptrend; // strong downtrend → don't fade
+            if (reversalConfirm && !adxBlocksReversal) {
+                longTriggered = true;
+                longReason = isUptrend ? 'Oversold in Uptrend' : 'RSI Oversold Reversal';
+                if (bullishDivergence) longReason += ' + Bullish Divergence';
+                if (macdBullishAligned) longReason += ' + MACD Positive';
+                if (stochOversold) longReason += ' + Stoch Oversold';
+                if (hasBullishPattern) longReason += ' + ' + patterns.join(', ');
+                longConfidence = (isUptrend && bullishDivergence) ? 'HIGH'
+                    : (isUptrend || bullishDivergence) ? 'MEDIUM' : 'LOW';
+            }
         }
     }
 
-    if (!longTriggered && bullishDivergence && sentimentGateLong && mode !== 'long_term' && volumeAboveAvg) {
-        longTriggered = true;
-        longReason = 'Bullish RSI Divergence';
-        longConfidence = volumeSpike ? 'MEDIUM' : 'LOW';
+    // Tier D: Bullish divergence — high win-rate reversal but only when NOT in an
+    // active downtrend with strong ADX. Fading a strong falling trend even with
+    // divergence is risky; the divergence often persists for several more bars.
+    if (!longTriggered && bullishDivergence && sentimentGateLong && mode !== 'long_term') {
+        const adxBlocksReversal = adxValue !== undefined && adxValue > 28 && isDowntrend;
+        if (!adxBlocksReversal) {
+            longTriggered = true;
+            longReason = 'Bullish RSI Divergence';
+            if (isUptrend) longReason += ' + In Uptrend';
+            if (volumeAboveAvg) longReason += ' + Volume Conf.';
+            longConfidence = (isUptrend && volumeAboveAvg) ? 'HIGH'
+                : (isUptrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
+        }
     }
+
+    // Sentiment alignment boosts confidence one notch (Bullish news + LONG signal).
+    // Conversely, news-flow disagreement (already filtered by sentiment gate above
+    // for the BLOCKING case) reduces confidence one notch when "Neutral" — neutral
+    // sentiment with a LOW-confidence signal is the lowest win-rate bucket.
+    const bumpConfidence = (c: 'HIGH' | 'MEDIUM' | 'LOW'): 'HIGH' | 'MEDIUM' | 'LOW' =>
+        c === 'LOW' ? 'MEDIUM' : c === 'MEDIUM' ? 'HIGH' : 'HIGH';
 
     if (longTriggered) {
         if (volumeSpike) longReason += ' + Volume Spike';
         else if (volumeAboveAvg && !longReason.includes('Volume')) longReason += ' + Volume OK';
+        if (sentimentLab === 'Bullish') {
+            longConfidence = bumpConfidence(longConfidence);
+            longReason += ' + Bullish News';
+        }
         const exits = calculateExits('LONG', latest.close, atr);
+        const horizon: TradeRecommendation['horizon'] =
+            mode === 'scalp' ? 'short' :
+            mode === 'long_term' ? 'long' :
+            (isGoldenCross || longReason.includes('SMA200')) ? 'long' : 'medium';
         if (meetsRR(latest.close, exits.stopLoss, exits.takeProfit)) {
-            return { action: 'LONG', reason: longReason, confidence: longConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+            return { action: 'LONG', reason: longReason, confidence: longConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', horizon, ...exits };
         }
     }
 
     // ── 2. SHORT signals ─────────────────────────────────────────────────
-    const hasBearishPattern = patterns.some(p => ['Bearish Engulfing', 'Shooting Star', 'Evening Star'].includes(p));
+    const hasBearishPattern = patterns.some(p =>
+        ['Bearish Engulfing', 'Shooting Star', 'Evening Star', 'Three Black Crows'].includes(p));
     const sentimentGateShort = sentimentLab !== 'Bullish';
+    // Hard block: do NOT take SHORTs while a bullish RSI divergence is forming.
+    // Especially deadly for shorts because of squeeze risk on the long side.
+    const shortBlockedByDivergence = bullishDivergence && !isOverbought;
 
     let shortTriggered = false;
-    let shortReason = mode === 'swing' ? 'Strong Downtrend (MA Alignment)' : mode === 'long_term' ? 'Secular Downtrend (< SMA200)' : 'Downtrend (EMA Aligned)';
+    let shortReason = mode === 'swing' ? 'Downtrend (MA Alignment)' : mode === 'long_term' ? 'Secular Downtrend (< SMA200)' : 'Downtrend (EMA Aligned)';
     let shortConfidence: 'HIGH' | 'MEDIUM' | 'LOW' = 'LOW';
 
     if (mode === 'long_term') {
@@ -370,39 +504,108 @@ export const getTradeSignal = (data: StockDataPoint[], mode: 'swing' | 'scalp' |
             shortConfidence = isDeathCross ? 'HIGH' : 'MEDIUM';
         }
     } else {
-        // Bollinger bounce: prev touched upper band, latest reverses below middle band
-        const bbMidShort = latest.bb?.middle || Infinity;
+        const bbMidShort = latest.bb?.middle ?? latest.close;
         const bbUpperHit = latest.bb?.upper && prev.bb?.upper
             ? (prev.high >= prev.bb.upper && latest.close < prev.close && latest.close < bbMidShort)
             : false;
-        const bearishSignals = [isOverbought, macdBearish, bbUpperHit, hasBearishPattern, stochBearish,
-            mode === 'scalp' ? ema9BearishCross : false].filter(Boolean).length;
 
-        // Require >= 2 independent confirmations
-        if (isDowntrend && trendIsStrong && bearishSignals >= 2 && sentimentGateShort && volumeGate) {
+        const bearishSignals = [
+            isOverbought,
+            macdBearish,
+            bbUpperHit,
+            hasBearishPattern,
+            stochBearish || stochOverbought,
+            pullbackToBearMA,
+            closeBelowSma50,
+            mode === 'scalp' ? ema9BearishCross : false,
+        ].filter(Boolean).length;
+
+        if (isDowntrend && bearishSignals >= 2 && sentimentGateShort && !shortBlockedByDivergence) {
             shortTriggered = true;
             if (isOverbought) shortReason += ' + RSI Overbought';
             if (macdBearish) shortReason += macdBearishCross ? ' + MACD Bearish Cross' : ' + MACD Momentum';
             if (bbUpperHit) shortReason += ' + Bollinger Bounce';
             if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
             if (stochBearish) shortReason += ' + Stoch RSI Cross';
+            else if (stochOverbought) shortReason += ' + Stoch Overbought';
+            if (pullbackToBearMA) shortReason += ' + MA Pullback';
+            if (closeBelowSma50) shortReason += ' + SMA50 Breakdown';
             if (mode === 'scalp' && ema9BearishCross) shortReason += ' + EMA 9/21 Cross';
-            shortConfidence = getConfidence(bearishSignals + (volumeSpike ? 1 : 0));
+            shortConfidence = getConfidence(bearishSignals + (volumeSpike ? 1 : 0), trendIsStrong && bearTrendAligned);
+        }
+
+        // Tier B: Trend continuation down — strict gating (mirrors LONG tier B).
+        if (!shortTriggered && isDowntrend && bearTrendAligned && rsi > 28 && sentimentGateShort && !shortBlockedByDivergence) {
+            const adxTrending = adxValue !== undefined && adxValue > 18;
+            const momentumFactors = [
+                macdBearishAligned,
+                volumeSpike,
+                hasBearishPattern,
+                stochBearish || stochOverbought,
+                pullbackToBearMA,
+            ].filter(Boolean).length;
+            const qualifies = (adxTrending && momentumFactors >= 1) || momentumFactors >= 2;
+            if (qualifies) {
+                shortTriggered = true;
+                shortReason = 'Trend Continuation Down (EMA Aligned)';
+                if (macdBearishAligned) shortReason += ' + MACD Negative';
+                if (adxTrending) shortReason += ' + ADX Trending';
+                if (pullbackToBearMA) shortReason += ' + MA Pullback';
+                if (hasBearishPattern) shortReason += ` + ${patterns.join(', ')}`;
+                shortConfidence = (macdBearishAligned && adxTrending && momentumFactors >= 2) ? 'MEDIUM' : 'LOW';
+            }
+        }
+
+        // Tier C: Overbought mean reversion — requires confirmation, like LONG side.
+        if (!shortTriggered && isOverbought && sentimentGateShort) {
+            const reversalConfirm = bearishDivergence
+                || macdBearishAligned
+                || hasBearishPattern
+                || stochBearish
+                || (latest.close < prev.close && latest.close < latest.open);
+            const adxBlocksReversal = adxValue !== undefined && adxValue > 30 && isUptrend; // strong uptrend → don't fade
+            if (reversalConfirm && !adxBlocksReversal) {
+                shortTriggered = true;
+                shortReason = isDowntrend ? 'Overbought in Downtrend' : 'RSI Overbought Reversal';
+                if (bearishDivergence) shortReason += ' + Bearish Divergence';
+                if (macdBearishAligned) shortReason += ' + MACD Negative';
+                if (stochOverbought) shortReason += ' + Stoch Overbought';
+                if (hasBearishPattern) shortReason += ' + ' + patterns.join(', ');
+                shortConfidence = (isDowntrend && bearishDivergence) ? 'HIGH'
+                    : (isDowntrend || bearishDivergence) ? 'MEDIUM' : 'LOW';
+            }
         }
     }
 
-    if (!shortTriggered && bearishDivergence && sentimentGateShort && mode !== 'long_term' && volumeAboveAvg) {
-        shortTriggered = true;
-        shortReason = 'Bearish RSI Divergence';
-        shortConfidence = volumeSpike ? 'MEDIUM' : 'LOW';
+    // Tier D: Bearish divergence — fires only outside a strong uptrend.
+    // Same ADX guard as the LONG side: don't fade a strong rally with high ADX,
+    // even if divergence is present, since divergences can persist for weeks.
+    if (!shortTriggered && bearishDivergence && !isUptrend && sentimentGateShort && mode !== 'long_term') {
+        const adxBlocksReversal = adxValue !== undefined && adxValue > 28 && isUptrend;
+        if (!adxBlocksReversal) {
+            shortTriggered = true;
+            shortReason = 'Bearish RSI Divergence';
+            if (isDowntrend) shortReason += ' + In Downtrend';
+            if (volumeAboveAvg) shortReason += ' + Volume Conf.';
+            shortConfidence = (isDowntrend && volumeAboveAvg) ? 'HIGH'
+                : (isDowntrend || volumeAboveAvg) ? 'MEDIUM' : 'LOW';
+        }
     }
 
     if (shortTriggered) {
         if (volumeSpike) shortReason += ' + Volume Spike';
         else if (volumeAboveAvg && !shortReason.includes('Volume')) shortReason += ' + Volume OK';
+        if (sentimentLab === 'Bearish') {
+            shortConfidence = bumpConfidence(shortConfidence);
+            shortReason += ' + Bearish News';
+        }
         const exits = calculateExits('SHORT', latest.close, atr);
+        const horizon: TradeRecommendation['horizon'] =
+            mode === 'scalp' ? 'short' :
+            mode === 'long_term' ? 'long' :
+            (isDeathCross || shortReason.includes('SMA200')) ? 'long' : 'medium';
         if (meetsRR(latest.close, exits.stopLoss, exits.takeProfit)) {
-            return { action: 'SHORT', reason: shortReason, confidence: shortConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', ...exits };
+            return { action: 'SHORT', reason: shortReason, confidence: shortConfidence, patterns: mode !== 'long_term' ? patterns : [], signalStatus: 'FORMING', horizon, ...exits };
         }
     }
 

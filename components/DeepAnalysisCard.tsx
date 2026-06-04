@@ -1,46 +1,149 @@
 'use client';
 
-import { Brain, Sparkles, Loader2, Play } from 'lucide-react';
+import { Brain, Sparkles, Loader2, Play, TrendingUp, TrendingDown, Shield, Target, AlertTriangle, Zap } from 'lucide-react';
+import { formatPrice } from '@/lib/format';
+
+type AIAction =
+    | 'STRONG_BUY' | 'BUY' | 'SHORT' | 'STRONG_SHORT' | 'WAIT'
+    | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'CLOSE' | 'REVERSE'
+    | 'SELL';
 
 interface DeepAnalysisCardProps {
     symbol: string;
     lang: 'en' | 'de';
     result?: AIResult | null;
     loading?: boolean;
-    onAnalyze?: () => void;
+    onAnalyze?: (positionInfo?: any) => void;
     hasNews?: boolean;
+    activePosition?: {
+        side: 'LONG' | 'SHORT';
+        entryPrice: number;
+        quantity: number;
+        pnlPercent: number;
+        holdingDays: number;
+    } | null;
 }
 
 interface AIResult {
     score: number;
+    action?: AIAction;
+    // API normalizes these to strings via toText() in llm.ts, but the component
+    // still defensively coerces in case of stale cached results.
     summary: string;
     reasoning: string;
+    timing?: string;
+    risks?: string;
+    keyLevels?: {
+        support: number | null;
+        resistance: number | null;
+        idealEntry: number | null;
+    };
+    positionAdvice?: string;
+    catalysts?: string;
+    conviction?: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
-export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading, onAnalyze, hasNews }: DeepAnalysisCardProps) {
+const ACTION_CONFIG: Record<AIAction, { label: { en: string; de: string }; bg: string; text: string; border: string; icon: any }> = {
+    STRONG_BUY:   { label: { en: 'STRONG BUY',  de: 'STARKER KAUF' },    bg: 'bg-green-500/25',   text: 'text-green-300',   border: 'border-green-400/40',   icon: Zap },
+    BUY:          { label: { en: 'BUY',         de: 'KAUFEN' },          bg: 'bg-green-500/20',   text: 'text-green-400',   border: 'border-green-500/30',   icon: TrendingUp },
+    SHORT:        { label: { en: 'SHORT',       de: 'LEERVERKAUF' },     bg: 'bg-rose-500/20',    text: 'text-rose-400',    border: 'border-rose-500/30',    icon: TrendingDown },
+    STRONG_SHORT: { label: { en: 'STRONG SHORT', de: 'STARKER SHORT' },  bg: 'bg-rose-600/30',    text: 'text-rose-300',    border: 'border-rose-500/40',    icon: TrendingDown },
+    HOLD:         { label: { en: 'HOLD',        de: 'HALTEN' },          bg: 'bg-blue-500/20',    text: 'text-blue-400',    border: 'border-blue-500/30',    icon: Shield },
+    SCALE_IN:     { label: { en: 'SCALE IN',    de: 'AUFSTOCKEN' },      bg: 'bg-emerald-500/20', text: 'text-emerald-400', border: 'border-emerald-500/30', icon: TrendingUp },
+    TRIM:         { label: { en: 'TRIM',        de: 'TEILVERKAUF' },     bg: 'bg-amber-500/20',   text: 'text-amber-400',   border: 'border-amber-500/30',   icon: Target },
+    CLOSE:        { label: { en: 'CLOSE',       de: 'POSITION SCHLIESSEN' }, bg: 'bg-orange-500/25', text: 'text-orange-300', border: 'border-orange-500/40', icon: AlertTriangle },
+    REVERSE:      { label: { en: 'REVERSE',     de: 'POSITION DREHEN' }, bg: 'bg-purple-500/25',  text: 'text-purple-300',  border: 'border-purple-500/40',  icon: TrendingDown },
+    SELL:         { label: { en: 'SELL',        de: 'VERKAUFEN' },       bg: 'bg-red-500/20',     text: 'text-red-400',     border: 'border-red-500/30',     icon: TrendingDown },
+    WAIT:         { label: { en: 'WAIT',        de: 'WARTEN' },          bg: 'bg-gray-500/20',    text: 'text-gray-300',    border: 'border-gray-500/30',    icon: Shield },
+};
+
+export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading, onAnalyze, hasNews, activePosition }: DeepAnalysisCardProps) {
     const t = {
-        title: lang === 'de' ? 'KI Tiefen-Analyse' : 'AI Deep Analysis',
+        title: lang === 'de' ? 'KI Trade-Analyse' : 'AI Trade Analysis',
         button: lang === 'de' ? 'Analyse starten' : 'Run Analysis',
-        analyzing: lang === 'de' ? 'Lese Artikel...' : 'Reading articles...',
-        score: lang === 'de' ? 'KI Score' : 'AI Score',
-        reasoning: lang === 'de' ? 'Begründung' : 'Reasoning',
-        summary: lang === 'de' ? 'Zusammenfassung' : 'Summary',
-        power: lang === 'de' ? 'Powered by Anthropic Claude Sonnet' : 'Powered by Anthropic Claude Sonnet',
+        buttonPos: lang === 'de' ? 'Position analysieren' : 'Analyze Position',
+        analyzing: lang === 'de' ? 'Analysiere Artikel & Technicals...' : 'Analyzing articles & technicals...',
+        score: lang === 'de' ? 'Einstiegs-Qualität' : 'Entry Quality',
+        scorePos: lang === 'de' ? 'Positions-Qualität' : 'Position Health',
+        reasoning: lang === 'de' ? 'Analyse-Faktoren' : 'Analysis Factors',
+        summary: lang === 'de' ? 'Einschätzung' : 'Assessment',
+        timing: lang === 'de' ? 'Timing' : 'Entry Timing',
+        risks: lang === 'de' ? 'Risiken' : 'Risks',
+        keyLevels: lang === 'de' ? 'Schlüsselniveaus' : 'Key Levels',
+        support: lang === 'de' ? 'Support' : 'Support',
+        resistance: lang === 'de' ? 'Widerstand' : 'Resistance',
+        idealEntry: lang === 'de' ? 'Idealer Einstieg' : 'Ideal Entry',
+        posAdvice: lang === 'de' ? 'Positions-Empfehlung' : 'Position Advice',
+        catalysts: lang === 'de' ? 'Nächster Katalysator' : 'Next Catalyst',
+        conviction: lang === 'de' ? 'Überzeugung' : 'Conviction',
+        power: 'Powered by Anthropic Claude Sonnet',
         noNews: lang === 'de' ? 'Keine News verfügbar für Analyse' : 'No news available for analysis',
         rerun: lang === 'de' ? 'Erneut analysieren' : 'Re-analyze',
+        activePos: lang === 'de' ? 'Aktive Position' : 'Active Position',
     };
 
     const getScoreColor = (s: number) => {
-        if (s >= 8) return 'text-green-600';
+        if (s >= 8) return 'text-green-400';
         if (s >= 6) return 'text-green-500';
-        if (s <= 3) return 'text-red-600';
-        if (s <= 5) return 'text-red-500';
-        return 'text-yellow-500';
+        if (s === 5) return 'text-yellow-400';
+        if (s >= 3) return 'text-orange-400';
+        return 'text-red-500';
+    };
+
+    const getConvictionStyle = (c?: string) => {
+        if (c === 'HIGH') return 'bg-green-500/20 text-green-400 border-green-500/30';
+        if (c === 'MEDIUM') return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    };
+
+    const handleAnalyze = () => {
+        if (activePosition && onAnalyze) {
+            onAnalyze(activePosition);
+        } else if (onAnalyze) {
+            onAnalyze();
+        }
+    };
+
+    const actionCfg = result?.action ? ACTION_CONFIG[result.action] || ACTION_CONFIG.WAIT : null;
+
+    // Defensive: coerce any shape (string / array / object) to renderable text.
+    // Prevents "c.split is not a function" / "Objects are not valid as a React child"
+    // when the API ever returns reasoning as an array or nested object.
+    const toText = (v: unknown): string => {
+        if (v == null) return '';
+        if (typeof v === 'string') return v;
+        if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+        if (Array.isArray(v)) {
+            return v.map(toText).filter(Boolean)
+                .map(s => (s.trim().startsWith('•') || s.trim().startsWith('-') ? s : `• ${s}`))
+                .join('\n');
+        }
+        if (typeof v === 'object') {
+            return Object.entries(v as Record<string, unknown>)
+                .map(([k, val]) => `• ${k}: ${toText(val)}`).join('\n');
+        }
+        return String(v);
+    };
+
+    const formatReasoning = (input: unknown) => {
+        const text = toText(input);
+        if (!text) return null;
+        const lines = text.split(/\n|•|·|—|- /).filter(l => l.trim());
+        if (lines.length <= 1) return <p className="text-xs leading-relaxed text-slate-300">{text}</p>;
+        return (
+            <ul className="space-y-1.5">
+                {lines.map((line, i) => (
+                    <li key={i} className="text-xs leading-relaxed text-slate-300 flex gap-2">
+                        <span className="text-indigo-400 mt-0.5 shrink-0">▸</span>
+                        <span>{line.trim()}</span>
+                    </li>
+                ))}
+            </ul>
+        );
     };
 
     return (
         <div className="bg-gradient-to-br from-indigo-900 to-slate-900 rounded-3xl p-4 md:p-6 shadow-xl border border-indigo-500/30 text-white relative overflow-hidden">
-            {/* Background Decor */}
             <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
                 <Brain size={120} />
             </div>
@@ -50,10 +153,9 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                     <Sparkles className="text-yellow-400" size={20} />
                     <h3 className="text-lg font-bold tracking-wide">{t.title}</h3>
                 </div>
-                {/* Re-analyze button when result already exists */}
                 {result && !loading && onAnalyze && hasNews && (
                     <button
-                        onClick={onAnalyze}
+                        onClick={handleAnalyze}
                         className="text-xs font-medium text-indigo-300 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-indigo-500/30 hover:border-indigo-400/50 hover:bg-white/5"
                     >
                         {t.rerun}
@@ -61,16 +163,33 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                 )}
             </div>
 
-            {/* Initial state: Show analyze button */}
+            {/* Active Position Badge */}
+            {activePosition && !result && !loading && (
+                <div className="mb-4 relative z-10 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-2.5 flex items-center gap-3">
+                    <Shield size={16} className="text-blue-400" />
+                    <div className="text-xs">
+                        <span className="text-blue-300 font-semibold">{t.activePos}:</span>
+                        <span className={`ml-2 font-bold ${activePosition.side === 'LONG' ? 'text-green-400' : 'text-red-400'}`}>
+                            {activePosition.side}
+                        </span>
+                        <span className="text-slate-400 ml-2">@ {formatPrice(activePosition.entryPrice, lang, { symbol })}</span>
+                        <span className={`ml-2 font-bold ${activePosition.pnlPercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {activePosition.pnlPercent >= 0 ? '+' : ''}{activePosition.pnlPercent.toFixed(2)}%
+                        </span>
+                    </div>
+                </div>
+            )}
+
+            {/* Initial state */}
             {!result && !loading && (
                 <div className="text-center py-8 relative z-10">
                     {hasNews ? (
                         <button
-                            onClick={onAnalyze}
+                            onClick={handleAnalyze}
                             className="group inline-flex items-center gap-3 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-900/50 hover:shadow-indigo-600/50 hover:scale-[1.02] active:scale-[0.98]"
                         >
                             <Play size={18} className="group-hover:scale-110 transition-transform" />
-                            {t.button}
+                            {activePosition ? t.buttonPos : t.button}
                         </button>
                     ) : (
                         <p className="text-indigo-300/60 text-sm">{t.noNews}</p>
@@ -78,7 +197,7 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                 </div>
             )}
 
-            {/* Loading state */}
+            {/* Loading */}
             {loading && (
                 <div className="text-center py-10 relative z-10 animate-pulse">
                     <Loader2 className="animate-spin mx-auto mb-3 text-indigo-300" size={32} />
@@ -86,26 +205,109 @@ export default function DeepAnalysisCard({ symbol, lang = 'en', result, loading,
                 </div>
             )}
 
-            {/* Result state */}
+            {/* Result */}
             {result && !loading && (
-                <div className="relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                    <div className="flex items-end gap-3 mb-4">
-                        <span className={`text-5xl font-black ${getScoreColor(result.score)} drop-shadow-lg`}>
-                            {result.score}<span className="text-2xl text-indigo-300/50">/10</span>
-                        </span>
-                        <span className="text-indigo-200 font-medium mb-1.5">{t.score}</span>
+                <div className="relative z-10 space-y-3">
+                    {/* Score + Action + Conviction */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-end gap-2">
+                            <span className={`text-5xl font-black ${getScoreColor(result.score)} drop-shadow-lg`}>
+                                {result.score}<span className="text-2xl text-indigo-300/50">/10</span>
+                            </span>
+                            <span className="text-indigo-200 font-medium mb-1.5 text-sm">
+                                {activePosition ? t.scorePos : t.score}
+                            </span>
+                        </div>
+                        {actionCfg && result.action && (
+                            <span className={`px-4 py-1.5 rounded-full text-sm font-black tracking-wide flex items-center gap-1.5 ${actionCfg.bg} ${actionCfg.text} border ${actionCfg.border}`}>
+                                <actionCfg.icon size={14} />
+                                {actionCfg.label[lang]}
+                            </span>
+                        )}
+                        {result.conviction && (
+                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${getConvictionStyle(result.conviction)}`}>
+                                {t.conviction}: {result.conviction}
+                            </span>
+                        )}
                     </div>
 
-                    <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 mb-4 border border-white/10">
+                    {/* Summary */}
+                    <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/10">
                         <h4 className="text-xs font-bold text-indigo-300 uppercase mb-2">{t.summary}</h4>
-                        <p className="text-sm leading-relaxed text-slate-100">{result.summary}</p>
+                        <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.summary)}</p>
                     </div>
 
+                    {/* Position Advice (only when invested) */}
+                    {result.positionAdvice && (
+                        <div className="bg-blue-500/10 backdrop-blur-md rounded-xl p-4 border border-blue-500/20">
+                            <h4 className="text-xs font-bold text-blue-400 uppercase mb-2 flex items-center gap-1.5">
+                                <Shield size={12} /> {t.posAdvice}
+                            </h4>
+                            <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.positionAdvice)}</p>
+                        </div>
+                    )}
+
+                    {/* Key Levels */}
+                    {result.keyLevels && (result.keyLevels.support || result.keyLevels.resistance || result.keyLevels.idealEntry) && (
+                        <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/5">
+                            <h4 className="text-xs font-bold text-indigo-300 uppercase mb-3 flex items-center gap-1.5">
+                                <Target size={12} /> {t.keyLevels}
+                            </h4>
+                            <div className="grid grid-cols-3 gap-3">
+                                {result.keyLevels.support != null && (
+                                    <div className="text-center">
+                                        <p className="text-[10px] text-slate-400 uppercase">{t.support}</p>
+                                        <p className="text-sm font-bold text-green-400">{formatPrice(result.keyLevels.support, lang, { symbol })}</p>
+                                    </div>
+                                )}
+                                {result.keyLevels.resistance != null && (
+                                    <div className="text-center">
+                                        <p className="text-[10px] text-slate-400 uppercase">{t.resistance}</p>
+                                        <p className="text-sm font-bold text-red-400">{formatPrice(result.keyLevels.resistance, lang, { symbol })}</p>
+                                    </div>
+                                )}
+                                {result.keyLevels.idealEntry != null && (
+                                    <div className="text-center">
+                                        <p className="text-[10px] text-slate-400 uppercase">{t.idealEntry}</p>
+                                        <p className="text-sm font-bold text-yellow-400">{formatPrice(result.keyLevels.idealEntry, lang, { symbol })}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Timing */}
+                    {result.timing && (
+                        <div className="bg-emerald-500/10 backdrop-blur-md rounded-xl p-4 border border-emerald-500/20">
+                            <h4 className="text-xs font-bold text-emerald-400 uppercase mb-2">{t.timing}</h4>
+                            <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.timing)}</p>
+                        </div>
+                    )}
+
+                    {/* Catalysts */}
+                    {result.catalysts && (
+                        <div className="bg-purple-500/10 backdrop-blur-md rounded-xl p-4 border border-purple-500/20">
+                            <h4 className="text-xs font-bold text-purple-400 uppercase mb-2 flex items-center gap-1.5">
+                                <Zap size={12} /> {t.catalysts}
+                            </h4>
+                            <p className="text-sm leading-relaxed text-slate-100 whitespace-pre-line">{toText(result.catalysts)}</p>
+                        </div>
+                    )}
+
+                    {/* Risks */}
+                    {result.risks && (
+                        <div className="bg-red-500/10 backdrop-blur-md rounded-xl p-4 border border-red-500/20">
+                            <h4 className="text-xs font-bold text-red-400 uppercase mb-2 flex items-center gap-1.5">
+                                <AlertTriangle size={12} /> {t.risks}
+                            </h4>
+                            <p className="text-sm leading-relaxed text-slate-200 whitespace-pre-line">{toText(result.risks)}</p>
+                        </div>
+                    )}
+
+                    {/* Reasoning */}
                     <div className="bg-white/5 backdrop-blur-md rounded-xl p-4 border border-white/5">
                         <h4 className="text-xs font-bold text-indigo-300 uppercase mb-2">{t.reasoning}</h4>
-                        <div className="text-xs leading-relaxed text-slate-300 space-y-1">
-                            {result.reasoning}
-                        </div>
+                        {formatReasoning(result.reasoning)}
                     </div>
                 </div>
             )}

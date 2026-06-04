@@ -36,9 +36,28 @@ export interface NewsResponse {
 
 export interface AIResult {
     score: number;
+    action?: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SCALE_IN' | 'TRIM' | 'SELL' | 'WAIT';
     summary: string;
     reasoning: string;
-    newsHash?: string; // To track if news changed
+    timing?: string;
+    risks?: string;
+    keyLevels?: {
+        support: number | null;
+        resistance: number | null;
+        idealEntry: number | null;
+    };
+    positionAdvice?: string;
+    catalysts?: string;
+    conviction?: 'HIGH' | 'MEDIUM' | 'LOW';
+    newsHash?: string;
+}
+
+export interface PositionInfo {
+    side: 'LONG' | 'SHORT';
+    entryPrice: number;
+    quantity: number;
+    pnlPercent: number;
+    holdingDays: number;
 }
 
 export const useMarketData = (
@@ -90,14 +109,17 @@ export const useMarketData = (
                 // Cache only valid stock data
                 cacheRef.current[selectedSymbol] = { ...cacheRef.current[selectedSymbol], stock: data };
 
-                // Cheap change detection: compare only the latest candle timestamp + close
                 setStockData(prev => {
                     if (!prev) return data;
                     const prevLast = prev.data[prev.data.length - 1];
                     const newLast = data.data[data.data.length - 1];
                     if (prevLast?.date === newLast?.date &&
                         prevLast?.close === newLast?.close &&
-                        prev.data.length === data.data.length) {
+                        prevLast?.high === newLast?.high &&
+                        prevLast?.low === newLast?.low &&
+                        prev.data.length === data.data.length &&
+                        prev.recommendation?.action === data.recommendation?.action &&
+                        prev.recommendation?.confidence === data.recommendation?.confidence) {
                         return prev;
                     }
                     return data;
@@ -264,12 +286,61 @@ export const useMarketData = (
     const multiTimeframe = multiTimeframeMap[selectedSymbol] ?? null;
 
     // 2b. MANUAL AI ANALYSIS: Triggered by user clicking the analyze button
-    const triggerAiAnalysis = async (symbol?: string) => {
+    const triggerAiAnalysis = async (symbol?: string, positionInfo?: PositionInfo) => {
         const targetSymbol = symbol || selectedSymbol;
         if (!targetSymbol || !newsData?.news || newsData.news.length === 0) return;
 
-        const currentNews = newsData.news.slice(0, 3);
+        const currentNews = newsData.news.slice(0, 5);
         const newsHash = currentNews.map(n => n.uuid).join('|');
+
+        // Build technical context from current stock data
+        let technicals: any = undefined;
+        if (stockData && stockData.symbol === targetSymbol) {
+            const latest = stockData.latest;
+            const rec = stockData.recommendation;
+            if (latest) {
+                const macdVal = latest.macd;
+                let macdSignal: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+                if (macdVal && typeof macdVal === 'object' && 'MACD' in macdVal && 'signal' in macdVal) {
+                    const m = (macdVal as any).MACD as number | undefined;
+                    const s = (macdVal as any).signal as number | undefined;
+                    if (m != null && s != null) {
+                        macdSignal = m > s ? 'bullish' : m < s ? 'bearish' : 'neutral';
+                    }
+                }
+
+                let trend: 'uptrend' | 'downtrend' | 'sideways' = 'sideways';
+                if (latest.sma50 && latest.sma200) {
+                    if (latest.close > latest.sma50 && latest.sma50 > latest.sma200) trend = 'uptrend';
+                    else if (latest.close < latest.sma50 && latest.sma50 < latest.sma200) trend = 'downtrend';
+                }
+
+                const prevClose = stockData.data.length > 1 ? stockData.data[stockData.data.length - 2]?.close : latest.close;
+                const changePct = prevClose ? ((latest.close - prevClose) / prevClose) * 100 : 0;
+
+                let volumeDesc: string | undefined;
+                if (stockData.unusualVolume?.isUnusual) {
+                    volumeDesc = `UNUSUAL (${stockData.unusualVolume.ratio.toFixed(1)}x average)`;
+                } else if (latest.volumeSma20 && latest.volume) {
+                    const ratio = latest.volume / latest.volumeSma20;
+                    volumeDesc = ratio > 1.2 ? `Above average (${ratio.toFixed(1)}x)` : `Normal (${ratio.toFixed(1)}x)`;
+                }
+
+                technicals = {
+                    price: latest.close,
+                    change: changePct,
+                    rsi: latest.rsi14,
+                    macdSignal,
+                    trend,
+                    sma50: latest.sma50,
+                    sma200: latest.sma200,
+                    atr: latest.atr,
+                    volume: volumeDesc,
+                    stopLoss: rec?.stopLoss,
+                    takeProfit: rec?.takeProfit,
+                };
+            }
+        }
 
         setAiLoading(true);
         try {
@@ -278,7 +349,9 @@ export const useMarketData = (
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     symbol: targetSymbol,
-                    newsItems: currentNews.map(n => ({ title: n.title, link: n.link, description: n.publisher }))
+                    newsItems: currentNews.map(n => ({ title: n.title, link: n.link, description: n.publisher })),
+                    position: positionInfo || undefined,
+                    technicals,
                 })
             });
 
@@ -288,9 +361,43 @@ export const useMarketData = (
                     ...prev,
                     [targetSymbol]: { ...data, newsHash }
                 }));
+            } else {
+                // Surface server errors so user sees the issue instead of a silent reset
+                let errMsg = `Server error ${res.status}`;
+                try {
+                    const errJson = await res.json();
+                    errMsg = errJson.message || errJson.error || errMsg;
+                } catch (_) {}
+                console.error('[AI Analysis]', errMsg);
+                setAiInsights(prev => ({
+                    ...prev,
+                    [targetSymbol]: {
+                        score: 0,
+                        action: 'WAIT',
+                        summary: 'AI Analysis Failed.',
+                        reasoning: errMsg,
+                        timing: '',
+                        risks: '',
+                        conviction: 'LOW',
+                        newsHash,
+                    } as any,
+                }));
             }
-        } catch (e) {
-            // Analysis failed silently
+        } catch (e: any) {
+            console.error('[AI Analysis] Network error:', e);
+            setAiInsights(prev => ({
+                ...prev,
+                [targetSymbol]: {
+                    score: 0,
+                    action: 'WAIT',
+                    summary: 'AI Analysis Failed.',
+                    reasoning: e?.message || 'Network error contacting analysis service.',
+                    timing: '',
+                    risks: '',
+                    conviction: 'LOW',
+                    newsHash,
+                } as any,
+            }));
         } finally {
             setAiLoading(false);
         }
@@ -390,7 +497,7 @@ export const useMarketData = (
         loading,
         aiLoading,
         error,
-        lastUpdated: stockData ? new Date() : null,
+        lastUpdated: stockData ? new Date(stockData.latest?.date || Date.now()) : null,
         triggerAiAnalysis,
         multiTimeframe,
         fetchMultiTimeframe,

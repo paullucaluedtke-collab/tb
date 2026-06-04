@@ -5,9 +5,15 @@ import {
     X, Plus, Trash2, Upload, Brain, Briefcase, AlertTriangle,
     TrendingUp, TrendingDown, Shield, Sparkles, Loader2,
 } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RTooltip } from 'recharts';
 import { usePortfolio, type Holding } from '@/hooks/usePortfolio';
-import { enrichHoldings, summarizePortfolio, type HoldingSnapshot } from '@/lib/portfolioAnalysis';
+import { enrichHoldings, summarizePortfolio, type HoldingSnapshot, type EnrichedHolding } from '@/lib/portfolioAnalysis';
 import { cur, formatPrice, localeFor, type Lang } from '@/lib/format';
+
+const DONUT_COLORS = [
+    '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4',
+    '#ec4899', '#84cc16', '#f97316', '#14b8a6', '#a855f7', '#64748b',
+];
 
 interface Summary {
     price: number;
@@ -43,7 +49,7 @@ const SIGNAL_COLORS: Record<string, string> = {
 
 export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lang = 'en' }: Props) {
     const { holdings, loading, error, addHolding, removeHolding, clearAll, importCsv, refresh } = usePortfolio();
-    const [tab, setTab] = useState<'holdings' | 'add' | 'import' | 'coach'>('holdings');
+    const [tab, setTab] = useState<'holdings' | 'allocation' | 'add' | 'import' | 'coach'>('holdings');
     const [confirmClear, setConfirmClear] = useState(false);
 
     const numLocale = localeFor(lang);
@@ -52,6 +58,7 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
     const t = {
         title: lang === 'de' ? 'Portfolio' : 'Portfolio',
         tabHoldings: lang === 'de' ? 'Positionen' : 'Holdings',
+        tabAllocation: lang === 'de' ? 'Verteilung' : 'Allocation',
         tabAdd: lang === 'de' ? 'Hinzufügen' : 'Add',
         tabImport: lang === 'de' ? 'CSV Import' : 'CSV Import',
         tabCoach: lang === 'de' ? 'KI-Coach' : 'AI Coach',
@@ -167,7 +174,7 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
 
                 {/* Tabs */}
                 <div className="flex gap-1 px-5 py-2 border-b border-gray-100 dark:border-gray-800">
-                    {(['holdings', 'add', 'import', 'coach'] as const).map(key => (
+                    {(['holdings', 'allocation', 'add', 'import', 'coach'] as const).map(key => (
                         <button
                             key={key}
                             onClick={() => setTab(key)}
@@ -178,6 +185,7 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
                             }`}
                         >
                             {key === 'holdings' ? t.tabHoldings
+                                : key === 'allocation' ? t.tabAllocation
                                 : key === 'add' ? t.tabAdd
                                 : key === 'import' ? t.tabImport
                                 : t.tabCoach}
@@ -207,6 +215,7 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
                             onSelect={onSelectSymbol}
                         />
                     )}
+                    {tab === 'allocation' && <AllocationTab enriched={enriched} summary={summary} lang={lang} />}
                     {tab === 'add' && <AddTab lang={lang} onAdded={async (input) => { await addHolding(input); setTab('holdings'); }} />}
                     {tab === 'import' && <ImportTab lang={lang} onImport={async (csv) => { const r = await importCsv(csv); setTab('holdings'); return r; }} />}
                     {tab === 'coach' && <CoachTab lang={lang} snapshots={snapshots} holdingsCount={holdings.length} />}
@@ -305,6 +314,74 @@ function HoldingsTab({
                     </div>
                 </div>
             ))}
+        </div>
+    );
+}
+
+function AllocationTab({
+    enriched, summary, lang,
+}: {
+    enriched: EnrichedHolding[];
+    summary: ReturnType<typeof summarizePortfolio>;
+    lang: Lang;
+}) {
+    const valued = enriched.filter(h => typeof h.marketValue === 'number' && (h.marketValue || 0) > 0);
+
+    if (valued.length === 0) {
+        return (
+            <div className="text-center py-12 text-gray-400 text-sm">
+                {lang === 'de'
+                    ? 'Keine Live-Preise verfügbar. Verteilung erscheint, sobald Kursdaten geladen sind.'
+                    : 'No live prices yet. Allocation appears once quotes load.'}
+            </div>
+        );
+    }
+
+    const total = summary.totalValue || 1;
+    const positionData = valued
+        .map(h => ({ name: h.symbol, value: h.marketValue || 0, pct: ((h.marketValue || 0) / total) * 100 }))
+        .sort((a, b) => b.value - a.value);
+    const sectorData = summary.sectorAllocation.map(s => ({ name: s.sector, value: s.value, pct: s.pct }));
+
+    const renderTip = ({ active, payload }: any) => {
+        if (!active || !payload?.length) return null;
+        const p = payload[0].payload;
+        return (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 text-xs shadow">
+                <span className="font-bold">{p.name}</span> — {formatPrice(p.value, lang)} ({p.pct.toFixed(1)}%)
+            </div>
+        );
+    };
+
+    const Donut = ({ data, title }: { data: { name: string; value: number; pct: number }[]; title: string }) => (
+        <div>
+            <h4 className="text-xs font-bold uppercase text-gray-400 mb-2 text-center">{title}</h4>
+            <div className="h-52">
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                        <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={2}>
+                            {data.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+                        </Pie>
+                        <RTooltip content={renderTip} />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="space-y-1 mt-2">
+                {data.slice(0, 8).map((d, i) => (
+                    <div key={d.name} className="flex items-center gap-2 text-xs">
+                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+                        <span className="flex-1 truncate text-gray-700 dark:text-gray-300">{d.name}</span>
+                        <span className="font-bold text-gray-900 dark:text-gray-100">{d.pct.toFixed(1)}%</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+
+    return (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Donut data={positionData} title={lang === 'de' ? 'Nach Position' : 'By Position'} />
+            <Donut data={sectorData} title={lang === 'de' ? 'Nach Sektor' : 'By Sector'} />
         </div>
     );
 }

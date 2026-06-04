@@ -487,12 +487,32 @@ function AddTab({ lang, onAdded }: { lang: Lang; onAdded: (input: { symbol: stri
 function ImportTab({ lang, onImport }: { lang: Lang; onImport: (csv: string) => Promise<{ imported: any[]; errors: { line: number; message: string }[] }> }) {
     const [csv, setCsv] = useState('');
     const [submitting, setSubmitting] = useState(false);
+    const [pdfLoading, setPdfLoading] = useState(false);
+    const [pdfWarnings, setPdfWarnings] = useState<string[]>([]);
     const [result, setResult] = useState<{ imported: number; errors: { line: number; message: string }[] } | null>(null);
 
     const handleFile = (file: File) => {
         const reader = new FileReader();
         reader.onload = e => setCsv(String(e.target?.result || ''));
         reader.readAsText(file);
+    };
+
+    const handlePdf = async (file: File) => {
+        setPdfLoading(true);
+        setPdfWarnings([]);
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await fetch('/api/portfolio/import-pdf', { method: 'POST', body: fd });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'PDF parse failed');
+            setCsv(data.csv || '');
+            setPdfWarnings(data.warnings || []);
+        } catch (e: any) {
+            setPdfWarnings([e.message || 'PDF parse failed']);
+        } finally {
+            setPdfLoading(false);
+        }
     };
 
     const submit = async () => {
@@ -520,14 +540,33 @@ function ImportTab({ lang, onImport }: { lang: Lang; onImport: (csv: string) => 
                         ? 'Zahlen werden sowohl im "1.234,56" als auch im "1234.56" Format akzeptiert.'
                         : 'Numbers accepted in both "1,234.56" and "1.234,56" formats.'}
                 </p>
+                <p className="text-indigo-600 dark:text-indigo-400">
+                    {lang === 'de'
+                        ? 'Tipp: Trade Republic PDF (Depotauszug) hochladen — Symbole werden automatisch erkannt. Vor dem Import unten prüfen!'
+                        : 'Tip: upload a Trade Republic PDF (portfolio statement) — symbols are auto-detected. Review below before importing!'}
+                </p>
             </div>
 
-            <div>
+            <div className="flex flex-wrap gap-2">
                 <label className="inline-flex items-center gap-2 px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs font-bold cursor-pointer hover:bg-gray-100">
                     <Upload size={14} /> {lang === 'de' ? 'CSV-Datei wählen' : 'Choose CSV file'}
                     <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
                 </label>
+                <label className="inline-flex items-center gap-2 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-800/40 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-bold cursor-pointer hover:bg-indigo-100">
+                    {pdfLoading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {lang === 'de' ? 'Trade Republic PDF' : 'Trade Republic PDF'}
+                    <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handlePdf(f); }} />
+                </label>
             </div>
+
+            {pdfWarnings.length > 0 && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30 text-amber-700 dark:text-amber-300 rounded-lg p-3 text-xs">
+                    <strong>{lang === 'de' ? 'Bitte prüfen:' : 'Please review:'}</strong>
+                    <ul className="mt-1 list-disc list-inside max-h-32 overflow-y-auto">
+                        {pdfWarnings.slice(0, 12).map((w, i) => <li key={i}>{w}</li>)}
+                    </ul>
+                </div>
+            )}
 
             <textarea
                 value={csv}

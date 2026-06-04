@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   // Native modules (better-sqlite3) must NOT be bundled by Next.js — they have
   // a compiled .node binary that must be required from node_modules at runtime.
-  serverExternalPackages: ['better-sqlite3'],
+  serverExternalPackages: ['better-sqlite3', 'pdf-parse'],
   typescript: {
     // !! WARN !!
     // Dangerously allow production builds to successfully complete even if

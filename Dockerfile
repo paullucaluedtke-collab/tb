@@ -40,6 +40,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/better-sqlite3 ./node_modules/better-sqlite3
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bindings ./node_modules/bindings
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/file-uri-to-path ./node_modules/file-uri-to-path
+# pdf-parse is a server-external (its index.js runs debug code on import, so we
+# require the inner module directly). Ship it + its node-ensure dependency.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/pdf-parse ./node_modules/pdf-parse
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/node-ensure ./node_modules/node-ensure
 
 # Persistent SQLite data directory (mounted as a docker volume in compose).
 RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data

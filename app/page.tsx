@@ -20,6 +20,7 @@ import { useSignalHistory } from '@/hooks/useSignalHistory';
 import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { useSignalAccuracy } from '@/hooks/useSignalAccuracy';
 import { usePaperTrades } from '@/hooks/usePaperTrades';
+import { usePortfolio } from '@/hooks/usePortfolio';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
 import { getMarketStatus } from '@/lib/marketHours';
 import { StockDataPoint } from '@/lib/technical-analysis';
@@ -175,16 +176,33 @@ export default function Home() {
   // --- State ---
 
   // Watchlist: Initialize with all default assets
-  const [watchlist, setWatchlist] = useState<Asset[]>(ASSETS);
+  const [baseWatchlist, setBaseWatchlist] = useState<Asset[]>(ASSETS);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('AAPL');
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
 
+  // Portfolio holdings — lifted here so held symbols auto-join the watchlist
+  // (gives every holding live prices + technical signals + sector data).
+  const { holdings: portfolioHoldings } = usePortfolio();
+
+  // Effective watchlist = default assets + any held symbols not already present.
+  const watchlist = useMemo(() => {
+    const known = new Set(baseWatchlist.map(a => a.symbol));
+    const extra: Asset[] = portfolioHoldings
+      .filter(h => !known.has(h.symbol))
+      .map(h => ({
+        symbol: h.symbol,
+        name: h.symbol,
+        category: h.symbol.endsWith('-USD') ? 'Crypto' as const : 'Stock' as const,
+      }));
+    return extra.length > 0 ? [...baseWatchlist, ...extra] : baseWatchlist;
+  }, [baseWatchlist, portfolioHoldings]);
+
   // Ensure watchlist is populated (Hydration fix)
   useEffect(() => {
-    if (watchlist.length === 0 && ASSETS.length > 0) {
-      setWatchlist(ASSETS);
+    if (baseWatchlist.length === 0 && ASSETS.length > 0) {
+      setBaseWatchlist(ASSETS);
     }
-  }, [watchlist]);
+  }, [baseWatchlist]);
 
   // Language State
   const [lang, setLang] = useState<'en' | 'de'>('en');
@@ -431,7 +449,7 @@ export default function Home() {
 
   const removeAsset = (e: React.MouseEvent, symbol: string) => {
     e.stopPropagation();
-    setWatchlist(prev => prev.filter(a => a.symbol !== symbol));
+    setBaseWatchlist(prev => prev.filter(a => a.symbol !== symbol));
     if (selectedSymbol === symbol) setSelectedSymbol('');
   };
 

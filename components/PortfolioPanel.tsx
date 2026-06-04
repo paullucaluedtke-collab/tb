@@ -13,8 +13,8 @@ interface Summary {
     price: number;
     changePercent?: number;
     sector?: string;
-    technicalAction?: 'LONG' | 'SHORT' | 'WAIT';
-    technicalConfidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+    // Real summaries from useMarketData carry the signal inside `recommendation`.
+    recommendation?: { action?: 'LONG' | 'SHORT' | 'WAIT'; confidence?: 'HIGH' | 'MEDIUM' | 'LOW' };
 }
 
 interface Props {
@@ -69,7 +69,24 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
         confirm: lang === 'de' ? 'Sicher?' : 'Sure?',
     };
 
-    // Build snapshots from passed-in summaries
+    // Sectors fetched lazily from /api/portfolio/sectors (cached server-side).
+    const [sectors, setSectors] = useState<Record<string, string>>({});
+    useEffect(() => {
+        const syms = holdings.map(h => h.symbol);
+        if (syms.length === 0) return;
+        const missing = syms.filter(s => !(s in sectors));
+        if (missing.length === 0) return;
+        fetch('/api/portfolio/sectors', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbols: missing }),
+        })
+            .then(r => r.json())
+            .then(d => { if (d.sectors) setSectors(prev => ({ ...prev, ...d.sectors })); })
+            .catch(() => {});
+    }, [holdings]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Build snapshots from passed-in summaries + resolved sectors
     const snapshots: Record<string, HoldingSnapshot> = useMemo(() => {
         const out: Record<string, HoldingSnapshot> = {};
         holdings.forEach(h => {
@@ -79,14 +96,16 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
                     symbol: h.symbol,
                     price: s.price,
                     changePercent: s.changePercent,
-                    sector: s.sector,
-                    technicalAction: s.technicalAction,
-                    technicalConfidence: s.technicalConfidence,
+                    sector: sectors[h.symbol] || s.sector,
+                    technicalAction: s.recommendation?.action,
+                    technicalConfidence: s.recommendation?.confidence,
                 };
+            } else if (sectors[h.symbol]) {
+                out[h.symbol] = { symbol: h.symbol, sector: sectors[h.symbol] };
             }
         });
         return out;
-    }, [holdings, summaries]);
+    }, [holdings, summaries, sectors]);
 
     const enriched = useMemo(() => enrichHoldings(holdings, snapshots), [holdings, snapshots]);
     const summary = useMemo(() => summarizePortfolio(enriched), [enriched]);

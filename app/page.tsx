@@ -10,6 +10,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import AlertToastContainer from '@/components/AlertToast';
 import PriceAlertsPanel from '@/components/PriceAlertsPanel';
 import PaperTradesPanel from '@/components/PaperTradesPanel';
+import PortfolioPanel from '@/components/PortfolioPanel';
 import ScreenerModal from '@/components/ScreenerModal';
 import DashboardSummary from '@/components/DashboardSummary';
 import SignalAccuracyPanel from '@/components/SignalAccuracyPanel';
@@ -27,7 +28,7 @@ import {
   LayoutDashboard, TrendingUp, TrendingDown, Activity,
   Search, Filter, ArrowUpDown, RefreshCw, Smartphone, Menu, X, Moon, Sun, Layers, LogOut,
   Bell, BellOff, BellRing, History, RotateCcw, Clock, Target, SlidersHorizontal,
-  CalendarClock, Volume2, AlertTriangle
+  CalendarClock, Volume2, AlertTriangle, Briefcase
 } from 'lucide-react';
 import { ASSETS, Asset } from '@/config/assets';
 
@@ -215,6 +216,7 @@ export default function Home() {
   // Paper trades + screener modals
   const [showPaperTrades, setShowPaperTrades] = useState(false);
   const [showScreener, setShowScreener] = useState(false);
+  const [showPortfolio, setShowPortfolio] = useState(false);
   const { openTrades: paperOpenTrades } = usePaperTrades(summaries);
 
   const activePositionForSymbol = useMemo(() => {
@@ -626,6 +628,12 @@ export default function Home() {
             >
               <Target size={13} /> Trades
             </button>
+            <button
+              onClick={() => { setShowPortfolio(true); setShowMobileSidebar(false); }}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-bold rounded-lg ${darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
+            >
+              <Briefcase size={13} /> Portfolio
+            </button>
           </div>
           <div className="flex justify-between items-center">
             <span>
@@ -753,6 +761,15 @@ export default function Home() {
             >
               <Target size={14} />
               <span className="hidden md:inline">{lang === 'de' ? 'Trades' : 'Trades'}</span>
+            </button>
+            {/* Portfolio */}
+            <button
+              onClick={() => setShowPortfolio(true)}
+              className={`p-1.5 rounded-lg transition-all hidden sm:flex items-center gap-1 text-xs font-bold ${darkMode ? 'bg-gray-700 text-gray-300 hover:text-white' : 'bg-gray-100 text-gray-500 hover:text-indigo-600'}`}
+              title={lang === 'de' ? 'Portfolio' : 'Portfolio'}
+            >
+              <Briefcase size={14} />
+              <span className="hidden md:inline">{lang === 'de' ? 'Portfolio' : 'Portfolio'}</span>
             </button>
             {/* Alert History Button */}
             <button
@@ -1170,6 +1187,19 @@ export default function Home() {
           summaries={summaries}
           watchlistSymbols={watchlist.map(a => a.symbol)}
           onClose={() => setShowPaperTrades(false)}
+          lang={lang}
+        />
+      )}
+
+      {/* Portfolio Modal */}
+      {showPortfolio && (
+        <PortfolioPanel
+          summaries={summaries as any}
+          onClose={() => setShowPortfolio(false)}
+          onSelectSymbol={(sym) => {
+            setSelectedSymbol(sym);
+            setShowPortfolio(false);
+          }}
           lang={lang}
         />
       )}

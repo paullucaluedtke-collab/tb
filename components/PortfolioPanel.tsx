@@ -117,6 +117,22 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
     const enriched = useMemo(() => enrichHoldings(holdings, snapshots), [holdings, snapshots]);
     const summary = useMemo(() => summarizePortfolio(enriched), [enriched]);
 
+    // Benchmark opportunity-cost comparison (vs SPY). Fetched once per open.
+    const [benchmark, setBenchmark] = useState<{ symbol: string; returnPct: number } | null>(null);
+    useEffect(() => {
+        if (holdings.length === 0) return;
+        fetch('/api/portfolio/benchmark', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ benchmark: 'SPY' }),
+        })
+            .then(r => r.json())
+            .then(d => { if (typeof d.benchmarkReturnPct === 'number') setBenchmark({ symbol: d.benchmarkSymbol, returnPct: d.benchmarkReturnPct }); })
+            .catch(() => {});
+    }, [holdings.length]);
+
+    const alpha = benchmark ? summary.totalPnlPct - benchmark.returnPct : null;
+
     return (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 md:p-4 overflow-y-auto">
             <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col">
@@ -169,6 +185,30 @@ export default function PortfolioPanel({ onClose, onSelectSymbol, summaries, lan
                                 {summary.concentrationRisk}
                             </div>
                         </div>
+                    </div>
+                )}
+
+                {/* Benchmark (alpha vs SPY) */}
+                {holdings.length > 0 && benchmark && (
+                    <div className="px-5 py-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2 text-xs">
+                        <span className="text-gray-400 font-bold uppercase text-[10px]">
+                            {lang === 'de' ? 'vs S&P 500 (Opportunität)' : 'vs S&P 500 (opportunity cost)'}
+                        </span>
+                        <span className="text-gray-500">
+                            {lang === 'de' ? 'Portfolio' : 'Portfolio'} {summary.totalPnlPct >= 0 ? '+' : ''}{summary.totalPnlPct.toFixed(2)}%
+                        </span>
+                        <span className="text-gray-400">·</span>
+                        <span className="text-gray-500">
+                            SPY {benchmark.returnPct >= 0 ? '+' : ''}{benchmark.returnPct.toFixed(2)}%
+                        </span>
+                        {alpha != null && (
+                            <span className={`ml-auto font-black px-2 py-0.5 rounded-full ${
+                                alpha >= 0 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                                           : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                            }`}>
+                                {lang === 'de' ? 'Alpha' : 'Alpha'} {alpha >= 0 ? '+' : ''}{alpha.toFixed(2)}%
+                            </span>
+                        )}
                     </div>
                 )}
 

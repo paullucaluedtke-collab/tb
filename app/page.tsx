@@ -21,6 +21,7 @@ import { usePriceAlerts } from '@/hooks/usePriceAlerts';
 import { useSignalAccuracy } from '@/hooks/useSignalAccuracy';
 import { usePaperTrades } from '@/hooks/usePaperTrades';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { usePortfolioAlerts } from '@/hooks/usePortfolioAlerts';
 import { relativeStrength, getBenchmark } from '@/lib/benchmarks';
 import { getMarketStatus } from '@/lib/marketHours';
 import { StockDataPoint } from '@/lib/technical-analysis';
@@ -220,6 +221,10 @@ export default function Home() {
   // Alerts + Follow system
   const { followedSymbols, isFollowed, toggleFollow, toasts, dismissToast, alertHistory, clearHistory, notifPermission, requestPermission } = useAlerts(summaries);
   const [showAlertHistory, setShowAlertHistory] = useState(false);
+
+  // Portfolio signal alerts — fire when a held symbol's signal turns adverse.
+  const heldSymbols = useMemo(() => portfolioHoldings.map(h => h.symbol), [portfolioHoldings]);
+  const { toasts: portfolioToasts, dismissToast: dismissPortfolioToast } = usePortfolioAlerts(heldSymbols, summaries, notifPermission, lang);
 
   // Signal history
   const { getDuration } = useSignalHistory(summaries);
@@ -1196,8 +1201,9 @@ export default function Home() {
         </div>
       </main>
 
-      {/* Alert Toasts — fixed bottom-right */}
+      {/* Alert Toasts — fixed bottom-right (follow-list + portfolio alerts) */}
       <AlertToastContainer alerts={toasts} onDismiss={dismissToast} />
+      <AlertToastContainer alerts={portfolioToasts} onDismiss={dismissPortfolioToast} />
 
       {/* Paper Trades Modal */}
       {showPaperTrades && (

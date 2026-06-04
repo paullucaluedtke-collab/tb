@@ -283,3 +283,185 @@ ${text}${geoSection}`;
         };
     }
 }
+
+// ─── Portfolio-level AI coach ──────────────────────────────────────────────
+// Takes a snapshot of the entire portfolio (per-holding metrics + aggregate
+// risk numbers) and asks Claude for portfolio-wide observations a single-stock
+// analysis would never catch: concentration risk, correlation clusters, hedge
+// suggestions, rebalancing priorities.
+
+export interface PortfolioHoldingInput {
+    symbol: string;
+    quantity: number;
+    avgCost: number;
+    currentPrice?: number;
+    marketValue?: number;
+    unrealizedPnlPct?: number;
+    sector?: string;
+    technicalAction?: 'LONG' | 'SHORT' | 'WAIT';
+    technicalConfidence?: 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface PortfolioSummaryInput {
+    totalValue: number;
+    totalPnlPct: number;
+    dayPnlPct: number;
+    concentrationRisk: 'LOW' | 'MEDIUM' | 'HIGH';
+    diversificationScore: number;
+    topConcentration: { symbol: string; pctOfPortfolio: number }[];
+    sectorAllocation: { sector: string; pct: number }[];
+}
+
+export interface PortfolioCoachResult {
+    overallScore: number;            // 1-10 health of the portfolio as a whole
+    headline: string;                // 1-sentence verdict
+    strengths: string;               // bullet-string
+    risks: string;                   // bullet-string (concentration, sector, correlation)
+    actions: string;                 // bullet-string with concrete next steps
+    hedgeSuggestion?: string;        // optional macro/instrument hedge idea
+    rebalancing?: string;            // optional rebalancing recommendation
+    sectorComment?: string;          // optional sector-level commentary
+}
+
+export async function analyzePortfolioWithClaude(
+    holdings: PortfolioHoldingInput[],
+    summary: PortfolioSummaryInput,
+    geoContext?: string,
+    lang: 'en' | 'de' = 'en',
+): Promise<PortfolioCoachResult> {
+    if (!process.env.ANTHROPIC_API_KEY) {
+        throw new Error('Missing ANTHROPIC_API_KEY');
+    }
+
+    if (holdings.length === 0) {
+        return {
+            overallScore: 0,
+            headline: lang === 'de' ? 'Kein Portfolio zum Analysieren.' : 'No portfolio to analyze.',
+            strengths: '', risks: '', actions: '',
+        };
+    }
+
+    const fmtPct = (n: number) => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+    const fmtMoney = (n: number) => '$' + n.toLocaleString('en-US', { maximumFractionDigits: 0 });
+
+    const holdingsTable = holdings.map(h => {
+        const parts = [
+            `${h.symbol}`,
+            `${h.quantity} sh`,
+            h.marketValue ? `value ${fmtMoney(h.marketValue)}` : 'value n/a',
+            h.unrealizedPnlPct != null ? `P&L ${fmtPct(h.unrealizedPnlPct)}` : '',
+            h.sector ? `sector ${h.sector}` : '',
+            h.technicalAction ? `signal ${h.technicalAction} (${h.technicalConfidence || 'MED'})` : '',
+        ].filter(Boolean);
+        return '- ' + parts.join(' | ');
+    }).join('\n');
+
+    const concentrationText = summary.topConcentration
+        .map(c => `${c.symbol} ${c.pctOfPortfolio.toFixed(1)}%`).join(', ');
+
+    const sectorText = summary.sectorAllocation
+        .slice(0, 6).map(s => `${s.sector} ${s.pct.toFixed(1)}%`).join(', ');
+
+    const geoSection = geoContext ? `\n\nGlobal Macro Context:\n${geoContext}` : '';
+    const langInstruction = lang === 'de'
+        ? 'Antworte ausschließlich auf Deutsch. Behalte alle JSON-Keys auf Englisch.'
+        : 'Respond in English.';
+
+    const systemPrompt = `You are a senior portfolio strategist at an institutional hedge fund. You think in portfolio-level terms: correlations, concentration, sector exposure, factor tilts, hedges, sequence-of-returns risk.
+
+Your job is NOT to re-evaluate individual stocks (technical signals are already attached). Your job is to identify portfolio-wide blind spots a single-stock analysis would miss:
+- Concentration risk (any one name > 25% = serious)
+- Sector overweighting (any one sector > 40% = consider trimming)
+- Correlation clusters (e.g. NVDA + AVGO + ASML all = AI-semis = single bet)
+- Missing hedges (all long, no defensive holdings)
+- Stale theses (positions deep in the red where the technicals have now flipped)
+
+Be DIRECT and SPECIFIC. Use dollar amounts and percentages. Recommend concrete actions like "Trim NVDA to 12% (sell ~30 shares ≈ $X)". No fluff.
+
+${langInstruction}
+
+CRITICAL: Output ONLY valid JSON. Every string value MUST be a plain string (NOT an array, NOT a nested object). Bullet points use \\n between items.`;
+
+    const userMessage = `Analyze this portfolio and tell me what to do.
+
+PORTFOLIO SNAPSHOT
+- Total value: ${fmtMoney(summary.totalValue)}
+- Unrealized P&L: ${fmtPct(summary.totalPnlPct)}
+- Today: ${fmtPct(summary.dayPnlPct)}
+- Concentration risk: ${summary.concentrationRisk} (largest position = ${summary.topConcentration[0]?.pctOfPortfolio.toFixed(1) || 0}%)
+- Diversification score: ${summary.diversificationScore}/100
+- Top concentration: ${concentrationText}
+- Sector mix: ${sectorText}
+
+HOLDINGS (${holdings.length} positions):
+${holdingsTable}
+${geoSection}
+
+Output JSON with these EXACT keys (all string values are plain strings, not arrays):
+- "overallScore": number 1-10 (portfolio health: 10 = well diversified with positive tailwinds, 1 = highly concentrated in losing trades)
+- "headline": string (1 sentence verdict, e.g. "Heavy AI-semi concentration creates correlated downside risk")
+- "strengths": string (newline-separated bullets — what's working)
+- "risks": string (newline-separated bullets — concentration, sector, correlation, stale theses)
+- "actions": string (newline-separated bullets — concrete next steps with specific symbols / amounts)
+- "hedgeSuggestion": string (optional: 1-2 sentences on a hedge — e.g. "Consider 5% TLT to offset tech drawdown risk")
+- "rebalancing": string (optional: 1-2 sentences on rebalancing priorities)
+- "sectorComment": string (optional: 1 sentence on sector mix)`;
+
+    try {
+        const message = await anthropic.messages.create({
+            model: "claude-sonnet-4-20250514",
+            max_tokens: 1500,
+            temperature: 0,
+            system: systemPrompt,
+            messages: [{ role: "user", content: userMessage }],
+        });
+
+        const responseContent = message.content[0].type === 'text' ? message.content[0].text : '';
+        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error(`Invalid AI response format. Raw length: ${responseContent.length}`);
+        }
+
+        const result = JSON.parse(jsonMatch[0]);
+        const toText = (v: any): string => {
+            if (v == null) return '';
+            if (typeof v === 'string') return v;
+            if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+            if (Array.isArray(v)) {
+                return v.map(toText).filter(Boolean)
+                    .map(s => (s.trim().startsWith('•') || s.trim().startsWith('-') ? s : `• ${s}`))
+                    .join('\n');
+            }
+            if (typeof v === 'object') {
+                return Object.entries(v).map(([k, val]) => `• ${k}: ${toText(val)}`).join('\n');
+            }
+            return String(v);
+        };
+        const scoreNum = typeof result.overallScore === 'number'
+            ? result.overallScore : parseFloat(result.overallScore) || 5;
+        return {
+            overallScore: Math.max(0, Math.min(10, scoreNum)),
+            headline: toText(result.headline) || (lang === 'de' ? 'Analyse abgeschlossen.' : 'Analysis completed.'),
+            strengths: toText(result.strengths),
+            risks: toText(result.risks),
+            actions: toText(result.actions),
+            hedgeSuggestion: result.hedgeSuggestion ? toText(result.hedgeSuggestion) : undefined,
+            rebalancing: result.rebalancing ? toText(result.rebalancing) : undefined,
+            sectorComment: result.sectorComment ? toText(result.sectorComment) : undefined,
+        };
+    } catch (error: any) {
+        let errorMessage = "Error connecting to AI service.";
+        if (error instanceof Anthropic.APIError) {
+            errorMessage = `API Error: ${error.status} - ${error.message}`;
+        } else if (error instanceof Error) {
+            errorMessage = error.message;
+        }
+        return {
+            overallScore: 0,
+            headline: lang === 'de' ? 'KI-Analyse fehlgeschlagen.' : 'Portfolio AI analysis failed.',
+            strengths: '',
+            risks: errorMessage,
+            actions: '',
+        };
+    }
+}

@@ -1,0 +1,29 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  DOCKER_HOST: "tcp://docker:2375"
+  DOCKER_TLS_CERTDIR: ""
+  REGISTRY_URL: "registry.zuehlke-server.de"
+  IMAGE_NAME: "$REGISTRY_URL/$CI_PROJECT_PATH:latest"
+
+build_image:
+  stage: build
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login $REGISTRY_URL -u "$CI_REGISTRY_USER" --password-stdin
+  script:
+    - docker build -t $IMAGE_NAME .
+    - docker push $IMAGE_NAME
+
+deploy_to_portainer:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    - '[[ -z "$WEBHOOK_URL" ]] && echo "FEHLER: WEBHOOK_URL Variable fehlt!" && exit 1'
+    - curl -X POST -k "$WEBHOOK_URL"
+  only:
+    - master
